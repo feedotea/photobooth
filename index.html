@@ -58,7 +58,7 @@
   .outputs{display:flex;flex-direction:column;gap:18px;width:100%;align-items:center;margin-bottom:20px;}
   #strip{background:#fff;box-shadow:0 4px 20px rgba(0,0,0,.16);max-width:160px;height:auto;}
   #stripImg{background:#fff;box-shadow:0 4px 20px rgba(0,0,0,.16);max-width:200px;height:auto;display:block;}
-  #gifImg{width:200px;border:2px solid var(--ink);background:#000;display:none;}
+  #gifImg{width:180px;border:2px solid var(--ink);background:#000;display:none;image-rendering:pixelated;}
   .gif-status{font-family:"Courier New",monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--grey);align-self:center;}
   .save-hint{font-family:"Courier New",monospace;font-size:10px;letter-spacing:.06em;color:var(--grey);line-height:1.8;margin-top:6px;}
   .actions{width:100%;max-width:300px;}
@@ -254,23 +254,30 @@ function applyFilmFx(ctx,w,h,seed){
 
 function buildGif(){
   $('gifStatus').textContent='沖洗中…';
-  const GW=160,GH=210;
+  // 超低畫質 = 超快生成。故意做小、做粗、做爛,復古好玩
+  const GW=90,GH=120;
   const gif=new GIF({workers:4,quality:30,width:GW,height:GH,dither:false,workerScript:'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js'});
   captures.forEach((cap,idx)=>{
     const f=document.createElement('canvas');f.width=GW;f.height=GH;const fx=f.getContext('2d');
+    fx.imageSmoothingEnabled=false;   // 不抗鋸齒,故意粗顆粒
     fx.fillStyle='#000';fx.fillRect(0,0,GW,GH);
     const ar=cap.width/cap.height,tar=GW/GH;let dw,dh,dx,dy;
     if(ar>tar){dh=GH;dw=GH*ar;dx=(GW-dw)/2;dy=0;}else{dw=GW;dh=GW/ar;dx=0;dy=(GH-dh)/2;}
     fx.drawImage(cap,dx,dy,dw,dh);
-    applyFilmFx(fx,GW,GH,idx+1);
-    // Moby 疊在 GIF 每格右下角
+    // Moby 疊上去 (一樣粗)
     if(mobyImg.complete && mobyImg.naturalWidth){
       const mh=GH*0.5, mw=mh*(mobyImg.naturalWidth/mobyImg.naturalHeight);
-      fx.drawImage(mobyImg, GW-mw-4, GH-mh, mw, mh);
+      fx.drawImage(mobyImg, GW-mw-2, GH-mh, mw, mh);
     }
-    fx.fillStyle='rgba(255,255,255,0.7)';fx.font='10px "Courier New",monospace';
-    fx.fillText('FEEDO ·'+(idx+1).toString().padStart(2,'0'),10,GH-12);
-    gif.addFrame(fx,{copy:true,delay:300});
+    // 色階砍到剩 4 階 (posterize) = 超爛復古黑白塊感
+    const im=fx.getImageData(0,0,GW,GH),p=im.data;
+    for(let i=0;i<p.length;i+=4){
+      let v=p[i];
+      v=Math.round(v/64)*64;          // 只留 4 階灰
+      p[i]=p[i+1]=p[i+2]=v;
+    }
+    fx.putImageData(im,0,0);
+    gif.addFrame(fx,{copy:true,delay:250});
   });
   let done=false;
   gif.on('finished',blob=>{
