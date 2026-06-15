@@ -42,6 +42,7 @@
   .flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
   .flash.fire{animation:flash .4s ease}
   @keyframes flash{0%{opacity:.9}100%{opacity:0}}
+  @keyframes rareIn{0%{opacity:0;transform:scale(1.3)}100%{opacity:1;transform:scale(1)}}
   #mobyOverlay{position:absolute;right:4%;bottom:0;height:46%;z-index:4;pointer-events:none;filter:drop-shadow(0 2px 6px rgba(0,0,0,.4));opacity:.96;}
   .flip{position:absolute;top:12px;right:12px;background:rgba(0,0,0,.55);color:#fff;border:1px solid rgba(255,255,255,.6);font-family:"Courier New",monospace;font-size:10px;letter-spacing:.1em;padding:8px 12px;border-radius:20px;cursor:pointer;z-index:5;}
   .cap-status{margin-top:18px;font-family:"Courier New",monospace;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--grey);}
@@ -56,9 +57,22 @@
   .reward .stamp{margin-top:12px;font-family:"Courier New",monospace;font-size:10px;letter-spacing:.14em;color:var(--grey);text-transform:uppercase;}
   .outputs{display:flex;flex-direction:column;gap:18px;width:100%;align-items:center;margin-bottom:20px;}
   #strip{background:#fff;box-shadow:0 4px 20px rgba(0,0,0,.16);max-width:160px;height:auto;}
-  #stripImg{background:#fff;box-shadow:0 4px 20px rgba(0,0,0,.16);max-width:200px;height:auto;display:block;}
+  /* developing animation */
+  .dev-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--paper);z-index:10;transition:opacity .8s ease;}
+  .dev-overlay.fade-out{opacity:0;pointer-events:none;}
+  .dev-text{font-family:"Courier New",monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink);}
+  .dev-dots::after{content:'';animation:devDots 1.5s steps(4,end) infinite;}
+  @keyframes devDots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+  .dev-bar{width:140px;height:2px;background:rgba(0,0,0,.12);margin-top:18px;border-radius:1px;overflow:hidden;}
+  .dev-bar-inner{width:0%;height:100%;background:var(--ink);transition:width 2.2s ease-in-out;}
+  .dev-bar-inner.go{width:100%;}
+  #stripImg{background:#fff;box-shadow:0 4px 20px rgba(0,0,0,.16);max-width:200px;height:auto;display:block;
+    transition:opacity 1s ease, filter 1s ease;}
+  #stripImg.developing{opacity:0;filter:blur(12px) brightness(1.3);}
   .save-hint{font-family:"Courier New",monospace;font-size:10px;letter-spacing:.06em;color:var(--grey);line-height:1.8;margin-top:6px;}
   .actions{width:100%;max-width:300px;}
+  .rare-badge{margin-top:10px;font-family:"Courier New",monospace;font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#a33;border:1.5px solid #a33;padding:6px 14px;display:none;}
+  .rare-badge.show{display:inline-block;animation:rareIn .6s ease;}
   .err{margin-top:20px;font-family:"Courier New",monospace;font-size:11px;letter-spacing:.08em;color:#a33;line-height:1.8;}
   .hidden{display:none!important}
 </style>
@@ -96,14 +110,21 @@
   </section>
 
   <!-- RESULT -->
-  <section class="screen" id="screen-result">
+  <section class="screen" id="screen-result" style="position:relative;">
+    <!-- 顯影動畫遮罩 -->
+    <div class="dev-overlay" id="devOverlay">
+      <div class="moby-mark" style="margin-bottom:22px;"></div>
+      <div class="dev-text">沖洗中<span class="dev-dots"></span></div>
+      <div class="dev-bar"><div class="dev-bar-inner" id="devBar"></div></div>
+    </div>
     <div class="reward">
       <div class="lead">The Feedo Times</div>
       <div class="stamp" id="rewardStamp"></div>
     </div>
     <div class="outputs">
-      <img id="stripImg" alt="拍貼條">
+      <img id="stripImg" alt="拍貼條" class="developing">
     </div>
+    <span class="rare-badge" id="rareBadge">★ rare print ★</span>
     <canvas id="strip" style="display:none"></canvas>
     <p class="save-hint">長按上方圖片 → 選「加入照片」即可存到相簿</p>
     <div class="actions">
@@ -171,10 +192,31 @@ async function runSequence(){
     await wait(420);$('flash').classList.remove('fire');await wait(450);
   }
   $('capStatus').textContent='沖洗中…';await wait(400);
-  buildStrip();
+  // 判定是否抽中限定版 (1/12 機率)
+  const isRare = Math.random() < 1/12;
+  buildStrip(isRare);
   const d=new Date();
-  $('rewardStamp').textContent='NO. '+Math.floor(Math.random()*9000+1000)+' · '+d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0');
+  const stamp = 'NO. '+Math.floor(Math.random()*9000+1000)+' · '+d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0');
+  $('rewardStamp').textContent= isRare ? '★ ' + stamp + ' ★' : stamp;
+  // 顯影動畫: 先顯示結果畫面但拍貼隱藏, 遮罩蓋住
+  $('stripImg').classList.add('developing');
+  $('devOverlay').classList.remove('fade-out');
+  $('devOverlay').style.display='flex';
+  $('devBar').classList.remove('go');
+  $('rareBadge').classList.remove('show');
   show('screen-result');
+  // 啟動進度條動畫
+  await wait(50);
+  $('devBar').classList.add('go');
+  // 等待顯影 (2.5 秒)
+  await wait(2500);
+  // 遮罩淡出
+  $('devOverlay').classList.add('fade-out');
+  await wait(300);
+  // 拍貼從模糊變清晰 (像拍立得顯影)
+  $('stripImg').classList.remove('developing');
+  // 如果是限定版, 顯示印章
+  if(isRare){ await wait(800); $('rareBadge').classList.add('show'); }
 }
 
 function capturePhoto(){
@@ -191,21 +233,26 @@ function capturePhoto(){
 }
 
 // 直式四格拍貼條 (3:4 直幅格子)
-function buildStrip(){
+function buildStrip(isRare){
   const strip=$('strip');
   const W=400,pad=18,gap=12,cellW=W-pad*2,cellH=Math.round(cellW*4/3);
   const headerH=92,footerH=104;
   const H=headerH+SHOTS*cellH+(SHOTS-1)*gap+footerH+pad;
   strip.width=W;strip.height=H;
   const ctx=strip.getContext('2d');
-  ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);ctx.fillStyle='#111';ctx.textAlign='center';
+  // 限定版: 黑底白字反轉
+  const bg=isRare?'#111':'#fff', ink=isRare?'#fff':'#111';
+  const capColor=isRare?'rgba(255,255,255,0.95)':'rgba(255,255,255,0.92)';
+  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);ctx.fillStyle=ink;ctx.textAlign='center';
   // 報紙刊頭: THE FEEDO TIMES
   ctx.font='700 34px Georgia,"Times New Roman",serif';
   ctx.fillText('The Feedo Times',W/2,46);
+  // 限定版特殊標記
+  if(isRare){ctx.font='700 9px "Courier New",monospace';ctx.fillText('— RARE PRINT —',W/2,16);}
   // 刊頭下方雙細線 + 日期/地點
   const d=new Date();
   const dateStr=(d.getMonth()+1)+'/'+d.getDate()+'/'+d.getFullYear();
-  ctx.lineWidth=1;ctx.strokeStyle='#111';
+  ctx.lineWidth=1;ctx.strokeStyle=ink;
   ctx.beginPath();ctx.moveTo(pad,58);ctx.lineTo(W-pad,58);ctx.stroke();
   ctx.beginPath();ctx.moveTo(pad,61);ctx.lineTo(W-pad,61);ctx.stroke();
   ctx.font='9px "Courier New",monospace';
@@ -225,20 +272,20 @@ function buildStrip(){
     const cap=CAPTIONS[Math.floor(Math.random()*CAPTIONS.length)];
     ctx.font='italic 12px Georgia,serif';
     ctx.textAlign='left';
-    ctx.fillStyle='rgba(255,255,255,0.92)';
+    ctx.fillStyle=capColor;
     ctx.fillText(cap, pad+10, y+cellH-14);
-    ctx.fillStyle='#111';ctx.textAlign='center';
+    ctx.fillStyle=ink;ctx.textAlign='center';
     // Moby 疊在這一格的右下角 (裁切後才畫,保證一定看得到)
     if(mobyImg.complete && mobyImg.naturalWidth){
       const mh=cellH*0.5, mw=mh*(mobyImg.naturalWidth/mobyImg.naturalHeight);
       ctx.drawImage(mobyImg, pad+cellW-mw-4, y+cellH-mh, mw, mh);
     }
-    ctx.lineWidth=1.5;ctx.strokeStyle='#111';ctx.strokeRect(pad,y,cellW,cellH);
+    ctx.lineWidth=1.5;ctx.strokeStyle=ink;ctx.strokeRect(pad,y,cellW,cellH);
     y+=cellH+gap;
   });
   // 刊尾: 細線 + 英文標語 + 新品快訊 + edition
   y+=4;
-  ctx.lineWidth=1;ctx.strokeStyle='#111';
+  ctx.lineWidth=1;ctx.strokeStyle=ink;
   ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(W-pad,y);ctx.stroke();
   y+=20;
   ctx.font='italic 13px Georgia,serif';
@@ -252,12 +299,12 @@ function buildStrip(){
   ctx.fillText('Our Tiramisu Assam',W/2,y);
   y+=20;
   ctx.font='9px "Courier New",monospace';
-  ctx.fillText('FEEDO MUSEUM · TAINAN EDITION',W/2,y);
+  ctx.fillText(isRare?'FEEDO MUSEUM · RARE EDITION':'FEEDO MUSEUM · TAINAN EDITION',W/2,y);
   stripUrl=strip.toDataURL('image/png');
   $('stripImg').src=stripUrl;
 }
 
-$('againBtn').onclick=()=>{if(stream)stream.getTracks().forEach(t=>t.stop());$('camErr').classList.add('hidden');show('screen-start');};
+$('againBtn').onclick=()=>{if(stream)stream.getTracks().forEach(t=>t.stop());$('camErr').classList.add('hidden');$('stripImg').classList.add('developing');$('rareBadge').classList.remove('show');$('devOverlay').style.display='none';show('screen-start');};
 
 // 自動防快取: 每次載入都把頁面標記為最新,避免客人看到舊版
 (function(){
