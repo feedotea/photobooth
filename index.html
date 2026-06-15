@@ -74,11 +74,6 @@
   .rare-badge{margin-top:10px;font-family:"Courier New",monospace;font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#a33;border:1.5px solid #a33;padding:6px 14px;display:none;}
   .rare-badge.show{display:inline-block;animation:rareIn .6s ease,rarePulse 2s ease-in-out infinite 1s;}
   @keyframes rarePulse{0%,100%{opacity:1}50%{opacity:.4}}
-  .rare-live{font-family:"Courier New",monospace;font-size:10px;letter-spacing:.12em;color:var(--grey);margin-top:8px;display:none;}
-  .rare-live.show{display:block;}
-  .verify-btn{margin-top:12px;font-family:"Courier New",monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;background:none;border:1px solid var(--grey);color:var(--ink);padding:8px 20px;display:none;cursor:pointer;}
-  .verify-btn.show{display:inline-block;}
-  .verify-btn:active{background:var(--ink);color:var(--paper);}
   .err{margin-top:20px;font-family:"Courier New",monospace;font-size:11px;letter-spacing:.08em;color:#a33;line-height:1.8;}
   .hidden{display:none!important}
 </style>
@@ -132,10 +127,8 @@
     </div>
     <span class="rare-badge" id="rareBadge">★ rare print ★</span>
     <p class="rare-claim" id="rareClaim" style="display:none;font-family:'Courier New',monospace;font-size:11px;letter-spacing:.08em;color:#a33;margin-top:10px;line-height:1.8;">憑此畫面至櫃台<br>領取 Moby 吊飾一只</p>
-    <div class="rare-live" id="rareLive"></div>
-    <button class="verify-btn" id="verifyBtn">店員驗證</button>
     <canvas id="strip" style="display:none"></canvas>
-    <p class="save-hint">長按上方圖片 → 選「加入照片」即可存到相簿</p>
+    <p class="save-hint">❶ 長按拍貼條 →「加入照片」存圖<br>❷ 中獎者再截圖整個畫面,保留兌換碼</p>
     <div class="actions">
       <button class="btn ghost" id="againBtn">再拍一次</button>
     </div>
@@ -235,21 +228,7 @@ async function runSequence(){
     await wait(800);
     $('rareBadge').classList.add('show');
     $('rareClaim').style.display='block';
-    $('rareClaim').innerHTML='兌換碼: <b style="font-size:16px;letter-spacing:.2em">'+rareCode+'</b><br>憑此畫面至櫃台<br>領取 Moby 吊飾一只';
-    // 即時時鐘 (截圖不會動,店員一眼辨真假)
-    $('rareLive').classList.add('show');
-    if(window._rareTick)clearInterval(window._rareTick);
-    window._rareTick=setInterval(()=>{
-      const n=new Date();
-      $('rareLive').textContent=n.getHours().toString().padStart(2,'0')+':'+n.getMinutes().toString().padStart(2,'0')+':'+n.getSeconds().toString().padStart(2,'0')+' · live';
-    },1000);
-    // 店員驗證按鈕
-    $('verifyBtn').classList.add('show');
-    $('verifyBtn').onclick=()=>{
-      const n=new Date();
-      const ts=n.getFullYear()+'/'+(n.getMonth()+1)+'/'+n.getDate()+' '+n.getHours().toString().padStart(2,'0')+':'+n.getMinutes().toString().padStart(2,'0')+':'+n.getSeconds().toString().padStart(2,'0');
-      alert('✓ 驗證通過\\n\\n兌換碼: '+rareCode+'\\n驗證時間: '+ts+'\\n\\n請記錄此碼後給予 Moby 吊飾');
-    };
+    $('rareClaim').innerHTML='兌換碼: <b style="font-size:16px;letter-spacing:.2em">'+rareCode+'</b><br>截圖此畫面 · 至櫃台出示<br>領取 Moby 吊飾一只<br><span style="font-size:9px;color:#8a857c">每組兌換碼限領一次</span>';
   }
 }
 
@@ -339,7 +318,7 @@ function buildStrip(isRare, rareCode){
   $('stripImg').src=stripUrl;
 }
 
-$('againBtn').onclick=()=>{if(stream)stream.getTracks().forEach(t=>t.stop());$('camErr').classList.add('hidden');$('stripImg').classList.add('developing');$('rareBadge').classList.remove('show');$('rareClaim').style.display='none';$('rareLive').classList.remove('show');$('verifyBtn').classList.remove('show');if(window._rareTick)clearInterval(window._rareTick);$('devOverlay').style.display='none';show('screen-start');};
+$('againBtn').onclick=()=>{if(stream)stream.getTracks().forEach(t=>t.stop());$('camErr').classList.add('hidden');$('stripImg').classList.add('developing');$('rareBadge').classList.remove('show');$('rareClaim').style.display='none';$('devOverlay').style.display='none';show('screen-start');};
 
 // 自動防快取: 每次載入都把頁面標記為最新,避免客人看到舊版
 (function(){
