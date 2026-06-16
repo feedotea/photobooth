@@ -103,9 +103,9 @@
       <span class="corner tl"></span><span class="corner tr"></span>
       <span class="corner bl"></span><span class="corner br"></span>
       <div class="flip" id="flipBtn">切換鏡頭</div>
-      <img id="mobyOverlay0" class="moby-overlay" alt="Moby">
+      <img id="mobyOverlay0" class="moby-overlay moby-left" alt="Moby">
       <img id="mobyOverlay1" class="moby-overlay" alt="Moby" style="display:none">
-      <img id="mobyOverlay2" class="moby-overlay moby-left" alt="Moby" style="display:none">
+      <img id="mobyOverlay2" class="moby-overlay" alt="Moby" style="display:none">
       <div class="countdown" id="countdown"></div>
       <div class="flash" id="flash"></div>
     </div>
@@ -223,7 +223,7 @@ async function runSequence(){
   const isRare = Math.random() < RARE_CHANCE;
   // 限定版產生唯一兌換碼 (RM-XXXX)
   const rareCode = isRare ? 'RM-' + Array.from({length:4},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random()*31)]).join('') : '';
-  buildStrip(isRare, rareCode);
+  buildStrip(isRare, rareCode, mobyOrder);
   // 追蹤拍照次數 (靜默送出,不影響體驗)
   if(TRACKER_URL) try{fetch(TRACKER_URL+'?t='+(isRare?'rare':'normal'));}catch(e){}
   const d=new Date();
@@ -275,7 +275,7 @@ function capturePhoto(){
 }
 
 // 直式四格拍貼條 (3:4 直幅格子)
-function buildStrip(isRare, rareCode){
+function buildStrip(isRare, rareCode, mobyOrder){
   const strip=$('strip');
   const W=400,pad=18,gap=12,cellW=W-pad*2,cellH=Math.round(cellW*4/3);
   const headerH=92,footerH=104;
@@ -305,7 +305,8 @@ function buildStrip(isRare, rareCode){
   ctx.fillText('— PHOTO ARCHIVE —',W/2,74);
   ctx.beginPath();ctx.moveTo(pad,82);ctx.lineTo(W-pad,82);ctx.stroke();
   // 洗牌 Moby 順序
-  const stripMobyOrder=[0,1,2];for(let j=2;j>0;j--){const k=Math.floor(Math.random()*(j+1));[stripMobyOrder[j],stripMobyOrder[k]]=[stripMobyOrder[k],stripMobyOrder[j]];}
+  // 用拍攝時的 Moby 順序 (跟取景框一致)
+  const stripMobyOrder=mobyOrder||[0,1,2];
   // 洗牌字幕 (三格不重複)
   const capPool=CAPTIONS.slice();for(let j=capPool.length-1;j>0;j--){const k=Math.floor(Math.random()*(j+1));[capPool[j],capPool[k]]=[capPool[k],capPool[j]];}
   let capIdx=0;
