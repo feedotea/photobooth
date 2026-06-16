@@ -306,28 +306,31 @@ function buildStrip(isRare, rareCode){
   ctx.beginPath();ctx.moveTo(pad,82);ctx.lineTo(W-pad,82);ctx.stroke();
   // 洗牌 Moby 順序
   const stripMobyOrder=[0,1,2];for(let j=2;j>0;j--){const k=Math.floor(Math.random()*(j+1));[stripMobyOrder[j],stripMobyOrder[k]]=[stripMobyOrder[k],stripMobyOrder[j]];}
+  // 洗牌字幕 (三格不重複)
+  const capPool=CAPTIONS.slice();for(let j=capPool.length-1;j>0;j--){const k=Math.floor(Math.random()*(j+1));[capPool[j],capPool[k]]=[capPool[k],capPool[j]];}
+  let capIdx=0;
   let y=headerH;
   captures.forEach(c=>{
     // 置中裁切成 3:4
     const ar=c.width/c.height,tar=cellW/cellH;let sx,sy,sw,sh;
     if(ar>tar){sh=c.height;sw=c.height*tar;sx=(c.width-sw)/2;sy=0;}else{sw=c.width;sh=c.width/tar;sx=0;sy=(c.height-sh)/2;}
     ctx.drawImage(c,sx,sy,sw,sh,pad,y,cellW,cellH);
-    // 每格隨機梗字幕 (左下角,冷感台詞)
-    const cap=CAPTIONS[Math.floor(Math.random()*CAPTIONS.length)];
-    ctx.font='italic 12px Georgia,serif';
-    ctx.textAlign='left';
-    ctx.fillStyle=capColor;
-    ctx.fillText(cap, pad+10, y+cellH-14);
-    ctx.fillStyle=ink;ctx.textAlign='center';
-    // Moby 疊在這一格的右下角 (裁切後才畫,保證一定看得到)
-    // 三格各一個 Moby 姿勢 (用洗牌順序)
+    // 三格各一個 Moby 姿勢
     const mIdx=stripMobyOrder[captures.indexOf(c)%3];
     const mi=mobyImgs[mIdx];
+    const mobyLeft=MOBY_SIDE[mIdx]==='left';
     if(mi.complete && mi.naturalWidth){
       const mh=cellH*0.5, mw=mh*(mi.naturalWidth/mi.naturalHeight);
-      const mx=MOBY_SIDE[mIdx]==='left'?pad+4:pad+cellW-mw-4;
+      const mx=mobyLeft?pad+4:pad+cellW-mw-4;
       ctx.drawImage(mi, mx, y+cellH-mh, mw, mh);
     }
+    // 字幕放 Moby 對面 (洗牌不重複)
+    const cap=capPool[capIdx++%capPool.length];
+    ctx.font='italic 12px Georgia,serif';
+    ctx.fillStyle=capColor;
+    if(mobyLeft){ctx.textAlign='right';ctx.fillText(cap, pad+cellW-10, y+cellH-14);}
+    else{ctx.textAlign='left';ctx.fillText(cap, pad+10, y+cellH-14);}
+    ctx.fillStyle=ink;ctx.textAlign='center';
     ctx.lineWidth=1.5;ctx.strokeStyle=ink;ctx.strokeRect(pad,y,cellW,cellH);
     y+=cellH+gap;
   });
