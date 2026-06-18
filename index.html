@@ -254,7 +254,7 @@ async function runSequence(){
     const now=new Date();
     const inEvent=now>=EVENT_START && now<=EVENT_END;
     if(inEvent){
-      $('rareClaim').innerHTML='兌換碼: <b style="font-size:16px;letter-spacing:.2em">'+rareCode+'</b><br>截圖此畫面 · 至櫃台出示<br>免費領取 Moby 吊飾一只<br><span style="font-size:9px;color:#8a857c">限時活動 6/19-6/21 · 每人限領一只</span><br><span style="font-size:9px;color:#a33">⚠ 請立即截圖保存,離開此頁面後無法找回<br>需出示截圖方可兌換,恕不接受口頭告知</span>';
+      $('rareClaim').innerHTML='兌換碼: <b style="font-size:16px;letter-spacing:.2em">'+rareCode+'</b><br>截圖此畫面 · 私訊粉絲頁預約領取<br>免費領取 Moby 吊飾一只<br><span style="font-size:9px;color:#8a857c">限時活動 6/19-6/21 · 每人限領一只</span><br><span style="font-size:9px;color:#a33">⚠ 請立即截圖保存,離開此頁面後無法找回<br>需出示截圖方可兌換,恕不接受口頭告知</span>';
     } else {
       $('rareClaim').innerHTML='<span style="font-size:10px;color:#8a857c">RARE PRINT · 恭喜抽到限定版</span>';
     }
