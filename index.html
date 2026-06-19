@@ -220,7 +220,7 @@ async function runSequence(){
   }
   $('capStatus').textContent='沖洗中…';await wait(400);
   // 判定是否抽中限定版
-  const isRare = Math.random() < RARE_CHANCE;
+  const isRare = false; // 抽獎已關閉
   // 限定版產生唯一兌換碼 (RM-XXXX)
   const rareCode = isRare ? 'RM-' + Array.from({length:4},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random()*31)]).join('') : '';
   buildStrip(isRare, rareCode, mobyOrder);
