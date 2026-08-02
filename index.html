@@ -78,8 +78,6 @@
   .save-hint{font-family:"Courier New",monospace;font-size:10px;letter-spacing:.06em;color:var(--grey);line-height:1.8;margin-top:6px;}
   .actions{width:100%;max-width:300px;}
   .err{margin-top:20px;font-family:"Courier New",monospace;font-size:11px;letter-spacing:.08em;color:#a33;line-height:1.8;}
-  .snd{background:none;border:none;font-family:"Courier New",monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink);cursor:pointer;padding:0;opacity:.85;}
-  .snd.off{opacity:.35;text-decoration:line-through;}
   .hidden{display:none!important}
 </style>
 </head>
@@ -88,7 +86,7 @@
   <div class="masthead">
     <span>TAINAN</span>
     <span class="title">FEEDO MUSEUM</span>
-    <button class="snd" id="sndBtn">&#9834; ON</button>
+    <span>PHOTO BOOTH</span>
   </div>
 
   <!-- START -->
@@ -97,17 +95,11 @@
     <h1>The Photo<br>Archive</h1>
     <p class="sub">三格 · 黑白 · 一份紀念<br>留下,在經典之上</p>
     <div class="pick-row">
-      <span class="pick-label">版面</span>
-      <div class="pick-opts">
-        <button class="pick-btn active" data-layout="strip">三格</button>
-        <button class="pick-btn" data-layout="front">頭版</button>
-      </div>
-    </div>
-    <div class="pick-row">
       <span class="pick-label">圖框</span>
       <div class="pick-opts">
         <button class="pick-btn active" data-frame="classic">經典</button>
         <button class="pick-btn" data-frame="moby">MOBY</button>
+        <button class="pick-btn" data-frame="id">證件照</button>
       </div>
     </div>
     <div class="pick-row">
@@ -116,9 +108,12 @@
         <button class="pick-btn active" data-filter="bw">黑白</button>
         <button class="pick-btn" data-filter="film">膠卷</button>
         <button class="pick-btn" data-filter="fade">褪色</button>
+        <button class="pick-btn" data-filter="color">原色</button>
       </div>
     </div>
     <button class="btn" id="startBtn">開始拍攝</button>
+    <button class="btn ghost" id="albumBtn">從相簿選擇</button>
+    <input type="file" id="albumInput" accept="image/*" multiple style="display:none">
     <p class="err hidden" id="camErr"></p>
   </section>
 
@@ -129,7 +124,7 @@
       <span class="corner tl"></span><span class="corner tr"></span>
       <span class="corner bl"></span><span class="corner br"></span>
       <div class="flip" id="flipBtn">切換鏡頭</div>
-      <img id="mobyOverlay0" class="moby-overlay moby-left" alt="Moby">
+      <img id="mobyOverlay0" class="moby-overlay moby-left" alt="Moby" style="display:none">
       <img id="mobyOverlay1" class="moby-overlay" alt="Moby" style="display:none">
       <img id="mobyOverlay2" class="moby-overlay" alt="Moby" style="display:none">
       <div class="countdown" id="countdown"></div>
@@ -156,7 +151,7 @@
     </div>
     <canvas id="strip" style="display:none"></canvas>
     <div style="margin-top:18px;text-align:center;">
-      <p class="save-hint">⬇ 長按圖片 →「加入照片」存圖</p>
+      <p class="save-hint">⬇ 長按拍貼條 →「加入照片」存圖</p>
       <p style="font-family:Georgia,serif;font-size:13px;font-style:italic;letter-spacing:.04em;color:var(--ink);margin-top:16px;line-height:1.7;">Save your print.<br>Post it. Tag <b>@feedomuseum</b>.</p>
     </div>
     <div class="actions">
@@ -193,111 +188,9 @@ const CAPTIONS=[
   'Cocoa, then quiet.'
 ];
 let stream=null, captures=[], stripUrl=null, facing='user';
-let selectedFrame='classic', selectedFilter='bw', selectedLayout='strip';
+let selectedFrame='classic', selectedFilter='bw';
 const $=id=>document.getElementById(id);
 const video=$('video');
-
-/* ============ 聲音引擎 (Web Audio,無外部音檔) ============ */
-const SFX=(function(){
-  let ac=null,on=true,devSrc=null,devGain=null,crackle=null;
-  function ctx(){ if(!ac){ try{ ac=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return null; } } return ac; }
-  function unlock(){ const c=ctx(); if(c&&c.state==='suspended'){ try{c.resume();}catch(e){} } }
-  function noiseBuf(c,dur){
-    const len=Math.max(1,Math.floor(c.sampleRate*dur));
-    const b=c.createBuffer(1,len,c.sampleRate),d=b.getChannelData(0);
-    for(let i=0;i<len;i++) d[i]=Math.random()*2-1;
-    return b;
-  }
-  function burst(dur,vol,type,freq,q,decay){
-    const c=ctx(); if(!c||!on) return;
-    const s=c.createBufferSource(); s.buffer=noiseBuf(c,dur);
-    const f=c.createBiquadFilter(); f.type=type; f.frequency.value=freq; if(q) f.Q.value=q;
-    const g=c.createGain(),t=c.currentTime;
-    g.gain.setValueAtTime(vol,t);
-    g.gain.exponentialRampToValueAtTime(0.0001,t+(decay||dur));
-    s.connect(f);f.connect(g);g.connect(c.destination);
-    s.start(t);s.stop(t+dur+0.02);
-  }
-  function thump(freq,vol,dur){
-    const c=ctx(); if(!c||!on) return;
-    const o=c.createOscillator(),g=c.createGain(),t=c.currentTime;
-    o.type='sine';o.frequency.setValueAtTime(freq,t);
-    o.frequency.exponentialRampToValueAtTime(Math.max(20,freq*0.4),t+dur);
-    g.gain.setValueAtTime(vol,t);
-    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-    o.connect(g);g.connect(c.destination);
-    o.start(t);o.stop(t+dur+0.02);
-  }
-  /* 打字機鍵擊 */
-  function tick(){ burst(0.035,0.34,'highpass',1800,1,0.03); thump(320,0.09,0.045); }
-  /* 機械快門: 前簾 + 後簾 */
-  function shutter(){
-    burst(0.02,0.55,'bandpass',3200,2,0.02); thump(190,0.20,0.05);
-    setTimeout(function(){ burst(0.03,0.38,'bandpass',2300,2,0.03); thump(140,0.13,0.06); },70);
-  }
-  /* 顯影槽: 低頻藥水聲 + 偶發氣泡 */
-  function developStart(){
-    const c=ctx(); if(!c||!on||devSrc) return;
-    const s=c.createBufferSource(); s.buffer=noiseBuf(c,2); s.loop=true;
-    const f=c.createBiquadFilter(); f.type='lowpass'; f.frequency.value=620;
-    const g=c.createGain(),t=c.currentTime;
-    g.gain.setValueAtTime(0.0001,t);
-    g.gain.linearRampToValueAtTime(0.05,t+0.4);
-    s.connect(f);f.connect(g);g.connect(c.destination);
-    s.start(t); devSrc=s; devGain=g;
-    crackle=setInterval(function(){
-      if(Math.random()<0.55) burst(0.05,0.055,'bandpass',900+Math.random()*1300,1,0.05);
-    },260);
-  }
-  function developStop(){
-    if(crackle){ clearInterval(crackle); crackle=null; }
-    if(devSrc&&devGain&&ac){
-      const t=ac.currentTime;
-      try{
-        devGain.gain.cancelScheduledValues(t);
-        devGain.gain.setValueAtTime(devGain.gain.value,t);
-        devGain.gain.linearRampToValueAtTime(0.0001,t+0.35);
-        devSrc.stop(t+0.42);
-      }catch(e){}
-    }
-    devSrc=null; devGain=null;
-  }
-  /* 相紙抽出 */
-  function reveal(){
-    const c=ctx(); if(!c||!on) return;
-    const s=c.createBufferSource(); s.buffer=noiseBuf(c,0.55);
-    const f=c.createBiquadFilter(); f.type='bandpass'; f.Q.value=0.8;
-    const t=c.currentTime;
-    f.frequency.setValueAtTime(400,t);
-    f.frequency.exponentialRampToValueAtTime(4200,t+0.45);
-    const g=c.createGain();
-    g.gain.setValueAtTime(0.0001,t);
-    g.gain.exponentialRampToValueAtTime(0.15,t+0.12);
-    g.gain.exponentialRampToValueAtTime(0.0001,t+0.5);
-    s.connect(f);f.connect(g);g.connect(c.destination);
-    s.start(t);s.stop(t+0.6);
-  }
-  return {
-    unlock:unlock, tick:tick, shutter:shutter,
-    developStart:developStart, developStop:developStop, reveal:reveal,
-    isOn:function(){return on;},
-    setOn:function(v){ on=v; if(!v) developStop(); }
-  };
-})();
-
-$('sndBtn').onclick=function(){
-  const v=!SFX.isOn();
-  SFX.setOn(v); SFX.unlock();
-  this.textContent = v ? '\u266A ON' : '\u266A OFF';
-  this.classList.toggle('off',!v);
-};
-
-/* 報紙內文填充 */
-const BODY_TEXT=[
-  'The subject arrived shortly after four. No reservation was made, and none was required. Our correspondent observed that the order was placed without hesitation, which is rare, and that the room was warmer than the street outside.',
-  'The dog was present throughout and offered no comment. It is understood that he has attended on every previous occasion, and that this is not accidental. The archive records his presence without further remark.',
-  'By six the light had crossed the counter and settled near the window. Nothing further was reported. The cup was returned empty. The record is closed and filed under the current date, as is customary here.'
-];
 
 // 圖框 / 濾鏡選擇器
 document.querySelectorAll('.pick-btn[data-frame]').forEach(b=>{
@@ -310,12 +203,6 @@ document.querySelectorAll('.pick-btn[data-filter]').forEach(b=>{
   b.onclick=()=>{
     document.querySelectorAll('.pick-btn[data-filter]').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');selectedFilter=b.dataset.filter;
-  };
-});
-document.querySelectorAll('.pick-btn[data-layout]').forEach(b=>{
-  b.onclick=()=>{
-    document.querySelectorAll('.pick-btn[data-layout]').forEach(x=>x.classList.remove('active'));
-    b.classList.add('active');selectedLayout=b.dataset.layout;
   };
 });
 $('mobyOverlay0').src=MOBY_SRCS[0];
@@ -339,11 +226,10 @@ async function startCamera(){
 }
 
 $('startBtn').onclick=async()=>{
-  SFX.unlock();
   const ok=await startCamera();if(!ok)return;
   captures=[];
   // 取景框濾鏡預覽
-  const filters={bw:'grayscale(1) contrast(1.12) brightness(1.04)',film:'sepia(0.35) contrast(1.1) brightness(1.02)',fade:'grayscale(0.6) contrast(0.85) brightness(1.1)'};
+  const filters={bw:'grayscale(1) contrast(1.12) brightness(1.04)',film:'sepia(0.35) contrast(1.1) brightness(1.02)',fade:'grayscale(0.6) contrast(0.85) brightness(1.1)',color:'contrast(1.05) brightness(1.02) saturate(1.1)'};
   video.style.filter=filters[selectedFilter]||filters.bw;
   show('screen-capture');buildDots();runSequence();
 };
@@ -360,16 +246,15 @@ async function runSequence(){
     $('capStatus').textContent='第 '+(i+1)+' 格 / 共 '+SHOTS+' 格';
     // 三格固定三個不同 Moby 姿勢 (用洗牌順序)
     const mi=mobyOrder[i];
-    for(let m=0;m<3;m++) $('mobyOverlay'+m).style.display=m===mi?'':'none';
-    for(let n=COUNT_FROM;n>0;n--){$('countdown').textContent=n;SFX.tick();await wait(1000);}
+    // Moby 已移至圖框裝飾區,取景框不顯示
+    for(let n=COUNT_FROM;n>0;n--){$('countdown').textContent=n;await wait(1000);}
     $('countdown').textContent='';
-    SFX.shutter();
     $('flash').classList.add('fire');capturePhoto();$('dot'+i).classList.add('done');
     await wait(420);$('flash').classList.remove('fire');await wait(450);
   }
   $('capStatus').textContent='沖洗中…';await wait(400);
   // 建立拍貼條
-  buildOutput(mobyOrder);
+  buildStrip(mobyOrder);
   // 追蹤拍照次數
   if(TRACKER_URL) try{fetch(TRACKER_URL+'?t=normal');}catch(e){}
   const d=new Date();
@@ -381,12 +266,9 @@ async function runSequence(){
   $('devOverlay').style.display='flex';
   $('devBar').classList.remove('go');
   show('screen-result');
-  SFX.developStart();
   await wait(50);
   $('devBar').classList.add('go');
   await wait(2500);
-  SFX.developStop();
-  SFX.reveal();
   $('devOverlay').classList.add('fade-out');
   await wait(300);
   $('stripImg').classList.remove('developing');
@@ -420,6 +302,11 @@ function capturePhoto(){
       p[i]=Math.max(0,Math.min(255,v*1.02+8));
       p[i+1]=Math.max(0,Math.min(255,v*0.98+6));
       p[i+2]=Math.max(0,Math.min(255,v*0.92+4));
+    }else if(selectedFilter==='color'){
+      // 原色: 微調對比 + 飽和
+      p[i]=Math.max(0,Math.min(255,(r-128)*1.05+130));
+      p[i+1]=Math.max(0,Math.min(255,(g-128)*1.05+130));
+      p[i+2]=Math.max(0,Math.min(255,(b-128)*1.05+130));
     }else{
       // 黑白: 高對比灰階
       let v=0.299*r+0.587*g+0.114*b;
@@ -431,349 +318,245 @@ function capturePhoto(){
   captures.push(c);
 }
 
-// ===== 版面分派 =====
-function buildOutput(mobyOrder){
-  if(selectedLayout==='front') buildFrontPage(mobyOrder);
-  else buildStrip(mobyOrder);
-}
-
-// ===== 共用: 紙張質地 =====
-function paperBg(ctx,W,H){
-  ctx.fillStyle='#f5f0e8';ctx.fillRect(0,0,W,H);
-  const grains=Math.floor(W*H/400);
-  for(let i=0;i<grains;i++){
-    ctx.fillStyle='rgba(0,0,0,'+(Math.random()*0.03)+')';
-    ctx.fillRect(Math.random()*W,Math.random()*H,1,1);
-  }
-  const spots=Math.floor(W*H/10000);
-  for(let i=0;i<spots;i++){
-    ctx.beginPath();
-    ctx.arc(Math.random()*W,Math.random()*H,Math.random()*2.5+0.5,0,Math.PI*2);
-    ctx.fillStyle='rgba(80,60,40,'+(Math.random()*0.12+0.03)+')';
-    ctx.fill();
-  }
-}
-// ===== 共用: 斷行 =====
-function wrapText(ctx,text,maxW){
-  const words=text.split(' ');const lines=[];let line='';
-  for(let i=0;i<words.length;i++){
-    const t=line?line+' '+words[i]:words[i];
-    if(ctx.measureText(t).width>maxW&&line){lines.push(line);line=words[i];}
-    else line=t;
-  }
-  if(line)lines.push(line);
-  return lines;
-}
-// ===== 共用: 置中裁切 =====
-function drawCrop(ctx,c,dx,dy,dw,dh){
-  const ar=c.width/c.height,tar=dw/dh;let sx,sy,sw,sh;
-  if(ar>tar){sh=c.height;sw=c.height*tar;sx=(c.width-sw)/2;sy=0;}
-  else{sw=c.width;sh=c.width/tar;sx=0;sy=(c.height-sh)/2;}
-  ctx.drawImage(c,sx,sy,sw,sh,dx,dy,dw,dh);
-}
-
-// ===== 頭版模式 (9:16 限動比例) =====
-function buildFrontPage(mobyOrder){
-  const isMoby=selectedFrame==='moby';
-  const DW=400,DH=711.11;            // 設計單位,9:16
-  const SC=2.7;                      // 400*2.7=1080 / 711.11*2.7=1920
-  const out=document.createElement('canvas');
-  out.width=1080;out.height=1920;
-  const ctx=out.getContext('2d');
-  ctx.imageSmoothingQuality='high';
-  ctx.scale(SC,SC);
-
-  const pad=isMoby?28:22,cw=DW-pad*2;
-  const ink='#1a1a1a',grey='#8a857c';
-  const u=1/SC;                      // 一個實體像素
-
-  // 紙張底色 + 細顆粒 (以實體像素為單位,避免放大後變色塊)
-  ctx.fillStyle='#f5f0e8';ctx.fillRect(0,0,DW,DH);
-  for(let i=0;i<26000;i++){
-    ctx.fillStyle='rgba(0,0,0,'+(Math.random()*0.03)+')';
-    ctx.fillRect(Math.random()*DW,Math.random()*DH,u,u);
-  }
-  for(let i=0;i<110;i++){
-    ctx.beginPath();
-    ctx.arc(Math.random()*DW,Math.random()*DH,Math.random()*2.2+0.4,0,Math.PI*2);
-    ctx.fillStyle='rgba(80,60,40,'+(Math.random()*0.12+0.03)+')';
-    ctx.fill();
-  }
-
-  const order=mobyOrder||[0,1,2];
-  const pool=CAPTIONS.slice();
-  for(let j=pool.length-1;j>0;j--){const k=Math.floor(Math.random()*(j+1));const t=pool[j];pool[j]=pool[k];pool[k]=t;}
-
-  function rule(y,w){ctx.lineWidth=w||0.5;ctx.strokeStyle=ink;ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(DW-pad,y);ctx.stroke();}
-  function ornament(cx,cy){
-    ctx.lineWidth=0.5;ctx.strokeStyle=ink;ctx.fillStyle=ink;
-    ctx.beginPath();ctx.moveTo(cx-28,cy);ctx.lineTo(cx-8,cy);ctx.stroke();
-    ctx.beginPath();ctx.arc(cx-5,cy,1.5,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.arc(cx,cy,1.5,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.arc(cx+5,cy,1.5,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.moveTo(cx+8,cy);ctx.lineTo(cx+28,cy);ctx.stroke();
-  }
-  // 縮到剛好一行
-  function fitOneLine(text,maxW,startPx,minPx,weight,fam){
-    let px=startPx;
-    while(px>minPx){
-      ctx.font=weight+' '+px+'px '+fam;
-      if(ctx.measureText(text).width<=maxW) break;
-      px-=0.5;
-    }
-    return px;
-  }
-  function drawMoby(idx,x,y,w,h,scale){
-    const m=mobyImgs[idx];
-    if(!m.complete||!m.naturalWidth) return;
-    const mh=h*scale,mw=mh*(m.naturalWidth/m.naturalHeight);
-    const left=MOBY_SIDE[idx]==='left';
-    ctx.drawImage(m,left?x+4:x+w-mw-4,y+h-mh,mw,mh);
-  }
-
-  // ===== 刊頭 =====
-  ctx.fillStyle=ink;ctx.textAlign='center';
-  ctx.font='700 30px Georgia,"Times New Roman",serif';
-  ctx.fillText('The Feedo Times',DW/2,44);
-  rule(55,1.5);rule(59,0.5);
-  const d=new Date();
-  ctx.font='8px "Courier New",monospace';
-  ctx.textAlign='left';ctx.fillText((d.getMonth()+1)+'/'+d.getDate()+'/'+d.getFullYear(),pad,74);
-  ctx.textAlign='right';ctx.fillText('NO. '+Math.floor(Math.random()*9000+1000),DW-pad,74);
-  ctx.textAlign='center';ctx.font='700 9.5px "Times New Roman",serif';
-  ctx.fillText('— TAINAN EDITION —',DW/2,74);
-  ctx.font='7px "Courier New",monospace';ctx.fillStyle=grey;
-  ctx.textAlign='left';ctx.fillText('VOL. MMXXVI',pad,86);
-  ctx.textAlign='right';ctx.fillText('PHOTO ARCHIVE',DW-pad,86);
-  ctx.fillStyle=ink;rule(92,0.5);
-
-  // ===== 頭條 (永遠一行) =====
-  ctx.textAlign='center';
-  const hl=pool[0].replace(/\.$/,'').toUpperCase();
-  fitOneLine(hl,cw,28,15,'700','Georgia,"Times New Roman",serif');
-  ctx.fillText(hl,DW/2,118);
-  const sub=pool[1];
-  fitOneLine(sub,cw-30,10.5,7.5,'italic','Georgia,serif');
-  ctx.fillStyle=grey;ctx.fillText(sub,DW/2,136);
-  ctx.fillStyle=ink;rule(148,0.5);
-
-  // ===== 主圖 + 側欄 =====
-  let y=162;
-  const hw=Math.round(cw*0.55),hh=245;
-  const colX=pad+hw+12,colW=cw-hw-12;
-  ctx.lineWidth=1.5;ctx.strokeStyle=ink;
-  ctx.strokeRect(pad-1,y-1,hw+2,hh+2);
-  drawCrop(ctx,captures[0],pad,y,hw,hh);
-  drawMoby(order[0],pad,y,hw,hh,0.52);
-  ctx.textAlign='left';ctx.font='7.5px Georgia,serif';ctx.fillStyle=ink;
-  let ty=y+8;
-  wrapText(ctx,BODY_TEXT[0],colW).forEach(function(l){ if(ty<y+hh-12){ctx.fillText(l,colX,ty);ty+=10.5;} });
-  ctx.font='7px "Courier New",monospace';ctx.fillStyle=grey;
-  ctx.fillText('CONT. NEXT ISSUE',colX,Math.min(ty+6,y+hh));
-  ctx.fillStyle=ink;
-
-  y+=hh;                              // 407
-  ctx.textAlign='left';ctx.font='italic 8.5px Georgia,serif';
-  ctx.fillText(pool[2],pad,y+12);
-  ctx.textAlign='right';ctx.font='7px "Courier New",monospace';ctx.fillStyle=grey;
-  ctx.fillText('PHOTO — FEEDO',pad+hw,y+12);
-  ctx.fillStyle=ink;rule(429,0.5);
-
-  // ===== 兩張小圖 (橫幅) =====
-  y=442;
-  const sw=Math.floor((cw-12)/2),sh=129;
-  [1,2].forEach(function(idx,i){
-    const x=pad+i*(sw+12);
-    ctx.lineWidth=1.2;ctx.strokeStyle=ink;
-    ctx.strokeRect(x-1,y-1,sw+2,sh+2);
-    drawCrop(ctx,captures[idx],x,y,sw,sh);
-    drawMoby(order[idx],x,y,sw,sh,0.62);
-    ctx.textAlign='left';ctx.font='italic 8px Georgia,serif';ctx.fillStyle=ink;
-    ctx.fillText(pool[3+i],x,y+sh+12);
-  });
-  rule(593,0.5);
-
-  // ===== 刊尾 =====
-  ctx.textAlign='center';
-  ornament(DW/2,605);
-  rule(618,0.5);
-  ctx.font='700 8.5px "Courier New",monospace';ctx.fillStyle=ink;
-  ctx.fillText('— NOW SERVING —',DW/2,634);
-  ctx.font='700 13px Georgia,serif';
-  ctx.fillText('Our Tiramisu Assam',DW/2,650);
-  ctx.lineWidth=0.3;ctx.strokeStyle=ink;
-  ctx.beginPath();ctx.moveTo(DW/2-50,658);ctx.lineTo(DW/2+50,658);ctx.stroke();
-  ctx.font='italic 10px Georgia,serif';
-  ctx.fillText('"Love is not found. It is practiced."',DW/2,672);
-  ctx.font='7px "Courier New",monospace';
-  ctx.fillText('FEEDO MUSEUM · TAINAN EDITION',DW/2,686);
-  ctx.fillStyle='rgba(0,0,0,.35)';
-  ctx.fillText('@feedomuseum',DW/2,698);
-  ctx.fillStyle=ink;
-
-  // ===== MOBY 斑點邊框 =====
-  if(isMoby){
-    ctx.fillStyle=ink;
-    for(let x=12;x<DW-8;x+=18){
-      const r=3+Math.random()*4;
-      ctx.beginPath();ctx.arc(x+Math.random()*6,8+Math.random()*4,r,0,Math.PI*2);ctx.fill();
-      ctx.beginPath();ctx.arc(x+Math.random()*6,DH-8-Math.random()*4,r,0,Math.PI*2);ctx.fill();
-    }
-    for(let yy=25;yy<DH-15;yy+=18){
-      const r=3+Math.random()*4;
-      ctx.beginPath();ctx.arc(8+Math.random()*4,yy+Math.random()*6,r,0,Math.PI*2);ctx.fill();
-      ctx.beginPath();ctx.arc(DW-8-Math.random()*4,yy+Math.random()*6,r,0,Math.PI*2);ctx.fill();
-    }
-  }
-
-  stripUrl=out.toDataURL('image/jpeg',0.92);
-  $('stripImg').src=stripUrl;
-}
-
-// v2 直式拍貼條 — 可選圖框 + 濾鏡
+// v2 直式拍貼條 — 可選圖框 + 濾鏡 (Moby 放圖框裝飾區)
 function buildStrip(mobyOrder){
   const strip=$('strip');
+  // === 證件照模式 ===
+  if(selectedFrame==='id'){
+    const W=400,H=680,pad=24;
+    strip.width=W;strip.height=H;
+    const ctx=strip.getContext('2d');
+    const ink='#1a1a1a',grey='#888';
+    // 紙張底色
+    ctx.fillStyle='#f5f0e8';ctx.fillRect(0,0,W,H);
+    for(let i=0;i<1500;i++){ctx.fillStyle='rgba(0,0,0,'+(Math.random()*0.03)+')';ctx.fillRect(Math.random()*W,Math.random()*H,1,1);}
+    for(let i=0;i<40;i++){ctx.beginPath();ctx.arc(Math.random()*W,Math.random()*H,Math.random()*2+0.5,0,Math.PI*2);ctx.fillStyle='rgba(80,60,40,'+(Math.random()*0.1+0.03)+')';ctx.fill();}
+    // 刊頭
+    ctx.fillStyle=ink;ctx.textAlign='center';
+    ctx.font='700 28px Georgia,serif';ctx.fillText('The Feedo Times',W/2,40);
+    ctx.lineWidth=1.2;ctx.strokeStyle=ink;ctx.beginPath();ctx.moveTo(pad,50);ctx.lineTo(W-pad,50);ctx.stroke();
+    ctx.lineWidth=0.4;ctx.beginPath();ctx.moveTo(pad,53);ctx.lineTo(W-pad,53);ctx.stroke();
+    ctx.font='7px "Courier New",monospace';ctx.fillStyle=grey;
+    ctx.textAlign='left';ctx.fillText('SPECIAL REPORT',pad,66);
+    ctx.textAlign='right';ctx.fillText('TAINAN BUREAU',W-pad,66);
+    ctx.fillStyle=ink;ctx.lineWidth=0.4;ctx.beginPath();ctx.moveTo(pad,72);ctx.lineTo(W-pad,72);ctx.stroke();
+    // 大標題
+    ctx.textAlign='center';
+    ctx.font='700 24px Georgia,serif';ctx.fillText('\u8B49\u4EF6\u7167\u6307\u5357',W/2,100);
+    ctx.font='9px "Courier New",monospace';ctx.fillStyle=grey;ctx.fillText('OFFICIAL PORTRAIT GUIDELINES',W/2,116);
+    ctx.fillStyle=ink;
+    // 花飾
+    ctx.font='10px Georgia,serif';ctx.fillText('\u2014 \u00b7 \u00b7 \u00b7 \u2014',W/2,134);
+    // === OK 照片 (第1張) ===
+    const okW=160,okH=200,okX=pad+10,okY=148;
+    ctx.fillStyle='#2e6eb5';ctx.fillRect(okX,okY,okW,okH);
+    ctx.lineWidth=1.5;ctx.strokeStyle=ink;ctx.strokeRect(okX,okY,okW,okH);
+    if(captures[0]){
+      const c=captures[0];const ar=c.width/c.height,tar=okW/okH;let sx,sy,sw,sh;
+      if(ar>tar){sh=c.height;sw=c.height*tar;sx=(c.width-sw)/2;sy=0;}else{sw=c.width;sh=c.width/tar;sx=0;sy=(c.height-sh)/2;}
+      ctx.drawImage(c,sx,sy,sw,sh,okX,okY,okW,okH);
+    }
+    // OK 徽章
+    ctx.beginPath();ctx.arc(okX+okW+24,okY+30,24,0,Math.PI*2);ctx.fillStyle='#2d8a4e';ctx.fill();
+    ctx.font='700 18px Arial,sans-serif';ctx.fillStyle='#fff';ctx.textAlign='center';ctx.fillText('OK',okX+okW+24,okY+36);
+    // OK 右側說明
+    const infoX=okX+okW+10;
+    ctx.fillStyle=ink;ctx.textAlign='left';
+    ctx.font='7px "Courier New",monospace';ctx.fillText('(35mm \u00d7 45mm)',infoX,okY+68);
+    ctx.font='700 13px Georgia,serif';ctx.fillText('\u5408\u683C\u7BC4\u4F8B',infoX,okY+88);
+    ctx.font='8px "Courier New",monospace';ctx.fillStyle='#555';
+    const rules=['\u00b7 \u6b63\u9762\u671d\u93e1\u982d','\u00b7 \u5168\u81c9\u8207\u8033\u6735\u53ef\u898b','\u00b7 \u7d14\u8272\u80cc\u666f','\u00b7 \u5c0d\u7126\u6e05\u6670'];
+    rules.forEach((r,i)=>{ctx.fillText(r,infoX,okY+106+i*16);});
+    ctx.fillStyle=ink;ctx.font='italic 11px Georgia,serif';
+    ctx.fillText('"He sat still. A miracle."',infoX,okY+180);
+    // === REJECTED ===
+    ctx.textAlign='center';ctx.fillStyle=ink;
+    ctx.font='500 9px "Courier New",monospace';ctx.fillText('\u2014 REJECTED EXAMPLES \u2014',W/2,374);
+    // NG 理由池
+    const ngPool=[
+      ['\u592a\u8fd1','Invaded the lens.'],
+      ['\u770b\u5225\u8655','Spotted a cat. Lost focus.'],
+      ['\u4e0d\u5c08\u696d','Unprofessional conduct.'],
+      ['\u5df2\u4e0b\u73ed','Off duty. Do not disturb.'],
+      ['\u65b9\u5411\u4e0d\u5c0d','Failed orientation test.'],
+      ['\u62d2\u7d55\u5408\u4f5c','No comment.'],
+      ['\u52d5\u592a\u5feb','Exceeded shutter speed.'],
+      ['\u6b6a\u982d','Structural integrity compromised.']
+    ];
+    for(let j=ngPool.length-1;j>0;j--){const k=Math.floor(Math.random()*(j+1));[ngPool[j],ngPool[k]]=[ngPool[k],ngPool[j]];}
+    // NG 照片 (第2、3張)
+    const ngW=160,ngH=160,ngY=390,ngGap=24;
+    const ng1X=pad+10,ng2X=W-pad-ngW-10;
+    [0,1].forEach((ni,i)=>{
+      const nx=i===0?ng1X:ng2X;
+      ctx.fillStyle='#2e6eb5';ctx.fillRect(nx,ngY,ngW,ngH);
+      ctx.lineWidth=1;ctx.strokeStyle=ink;ctx.strokeRect(nx,ngY,ngW,ngH);
+      if(captures[ni+1]){
+        const c=captures[ni+1];const ar=c.width/c.height,tar=ngW/ngH;let sx,sy,sw,sh;
+        if(ar>tar){sh=c.height;sw=c.height*tar;sx=(c.width-sw)/2;sy=0;}else{sw=c.width;sh=c.width/tar;sx=0;sy=(c.height-sh)/2;}
+        ctx.drawImage(c,sx,sy,sw,sh,nx,ngY,ngW,ngH);
+      }
+      // 紅色 ✕
+      ctx.beginPath();ctx.arc(nx+ngW-16,ngY+16,13,0,Math.PI*2);ctx.fillStyle='#c0392b';ctx.fill();
+      ctx.font='700 14px Arial,sans-serif';ctx.fillStyle='#fff';ctx.textAlign='center';ctx.fillText('\u2715',nx+ngW-16,ngY+21);
+      // NG 標籤
+      ctx.fillStyle=ink;ctx.textAlign='center';
+      ctx.font='700 12px Georgia,serif';ctx.fillText(ngPool[i][0],nx+ngW/2,ngY+ngH+18);
+      ctx.font='italic 8px Georgia,serif';ctx.fillStyle=grey;ctx.fillText(ngPool[i][1],nx+ngW/2,ngY+ngH+32);
+    });
+    // 底部
+    ctx.fillStyle=ink;ctx.textAlign='center';
+    ctx.lineWidth=0.4;ctx.strokeStyle=ink;ctx.beginPath();ctx.moveTo(pad,H-40);ctx.lineTo(W-pad,H-40);ctx.stroke();
+    ctx.font='7px "Courier New",monospace';ctx.fillStyle=grey;
+    ctx.fillText('FEEDO MUSEUM \u00b7 TAINAN \u00b7 @feedomuseum',W/2,H-26);
+    // Moby 小裝飾
+    const mbi=mobyImgs[0];
+    if(mbi.complete&&mbi.naturalWidth){const mh=35,mw=mh*(mbi.naturalWidth/mbi.naturalHeight);ctx.drawImage(mbi,W-pad-mw,H-48,mw,mh);}
+    stripUrl=strip.toDataURL('image/png');
+    $('stripImg').src=stripUrl;
+    return;
+  }
+  // === 經典 / MOBY 模式 ===
   const isMoby=selectedFrame==='moby';
-  const W=400,pad=isMoby?28:22,gap=16,cellW=W-pad*2,cellH=Math.round(cellW*4/3);
-  const headerH=135,footerH=120;
+  const W=400;
+  const pad=isMoby?28:22,gap=isMoby?12:16;
+  const cellW=W-pad*2,cellH=Math.round(cellW*4/3);
+  const headerH=isMoby?30:135,footerH=isMoby?50:120;
   const H=headerH+SHOTS*cellH+(SHOTS-1)*gap+footerH+pad;
   strip.width=W;strip.height=H;
   const ctx=strip.getContext('2d');
   const ink='#1a1a1a',grey='#888';
   // 紙張底色
   ctx.fillStyle='#f5f0e8';ctx.fillRect(0,0,W,H);
-  // 微紙紋
   for(let i=0;i<1500;i++){const rx=Math.random()*W,ry=Math.random()*H;ctx.fillStyle='rgba(0,0,0,'+(Math.random()*0.03)+')';ctx.fillRect(rx,ry,1,1);}
-  // 老報紙斑點
-  for(let i=0;i<60;i++){
-    const sx=Math.random()*W,sy=Math.random()*H;
-    const sr=Math.random()*2.5+0.5;
-    ctx.beginPath();ctx.arc(sx,sy,sr,0,Math.PI*2);
-    ctx.fillStyle='rgba(80,60,40,'+(Math.random()*0.12+0.03)+')';
-    ctx.fill();
-  }
+  for(let i=0;i<60;i++){const sx=Math.random()*W,sy=Math.random()*H;const sr=Math.random()*2.5+0.5;ctx.beginPath();ctx.arc(sx,sy,sr,0,Math.PI*2);ctx.fillStyle='rgba(80,60,40,'+(Math.random()*0.12+0.03)+')';ctx.fill();}
   // === MOBY 斑點邊框 ===
   if(isMoby){
     ctx.fillStyle=ink;
-    // 上下邊
-    for(let x=12;x<W-8;x+=18){
-      const r=3+Math.random()*4;
-      ctx.beginPath();ctx.arc(x+Math.random()*6,8+Math.random()*4,r,0,Math.PI*2);ctx.fill();
-      ctx.beginPath();ctx.arc(x+Math.random()*6,H-8-Math.random()*4,r,0,Math.PI*2);ctx.fill();
-    }
-    // 左右邊
-    for(let y2=25;y2<H-15;y2+=18){
-      const r=3+Math.random()*4;
-      ctx.beginPath();ctx.arc(8+Math.random()*4,y2+Math.random()*6,r,0,Math.PI*2);ctx.fill();
-      ctx.beginPath();ctx.arc(W-8-Math.random()*4,y2+Math.random()*6,r,0,Math.PI*2);ctx.fill();
-    }
+    for(let x=12;x<W-8;x+=18){const r=3+Math.random()*4;ctx.beginPath();ctx.arc(x+Math.random()*6,8+Math.random()*4,r,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(x+Math.random()*6,H-8-Math.random()*4,r,0,Math.PI*2);ctx.fill();}
+    for(let y2=25;y2<H-15;y2+=18){const r=3+Math.random()*4;ctx.beginPath();ctx.arc(8+Math.random()*4,y2+Math.random()*6,r,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(W-8-Math.random()*4,y2+Math.random()*6,r,0,Math.PI*2);ctx.fill();}
   }
-  // === 刊頭 ===
-  ctx.fillStyle=ink;ctx.textAlign='center';
-  ctx.font='700 32px Georgia,"Times New Roman",serif';
-  ctx.fillText('The Feedo Times',W/2,48);
-  // 雙線
-  ctx.lineWidth=1.5;ctx.strokeStyle=ink;
-  ctx.beginPath();ctx.moveTo(pad,58);ctx.lineTo(W-pad,58);ctx.stroke();
-  ctx.lineWidth=0.5;
-  ctx.beginPath();ctx.moveTo(pad,62);ctx.lineTo(W-pad,62);ctx.stroke();
-  // 日期 + PHOTO ARCHIVE + TAINAN
-  const d=new Date();
-  const dateStr=(d.getMonth()+1)+'/'+d.getDate()+'/'+d.getFullYear();
-  ctx.font='8px "Courier New",monospace';
-  ctx.textAlign='left';ctx.fillText(dateStr,pad,76);
-  ctx.textAlign='right';ctx.fillText('TAINAN',W-pad,76);
-  ctx.textAlign='center';
-  ctx.font='700 10px "Times New Roman",serif';
-  ctx.fillText('— PHOTO ARCHIVE —',W/2,76);
-  // 卷號 / 期號
-  ctx.font='7px "Courier New",monospace';ctx.fillStyle=grey;
-  ctx.textAlign='left';ctx.fillText('VOL. MMXXVI',pad,89);
-  const issueNo='NO. '+Math.floor(Math.random()*9000+1000);
-  ctx.textAlign='right';ctx.fillText(issueNo,W-pad,89);
-  ctx.fillStyle=ink;
-  // 細線
-  ctx.lineWidth=0.5;ctx.strokeStyle=ink;
-  ctx.beginPath();ctx.moveTo(pad,95);ctx.lineTo(W-pad,95);ctx.stroke();
-  // 品牌標語
-  ctx.font='italic 12px Georgia,serif';ctx.textAlign='center';
-  ctx.fillText('"Love is not found. It is practiced."',W/2,112);
-  // 裝飾花飾 ···
-  function drawOrnament(cx,cy){
-    ctx.lineWidth=0.5;ctx.strokeStyle=ink;ctx.fillStyle=ink;
-    ctx.beginPath();ctx.moveTo(cx-28,cy);ctx.lineTo(cx-8,cy);ctx.stroke();
-    ctx.beginPath();ctx.arc(cx-5,cy,1.5,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.arc(cx,cy,1.5,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.arc(cx+5,cy,1.5,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.moveTo(cx+8,cy);ctx.lineTo(cx+28,cy);ctx.stroke();
+  // === 刊頭 (僅 CLASSIC) ===
+  function drawOrnament(cx,cy){ctx.lineWidth=0.5;ctx.strokeStyle=ink;ctx.fillStyle=ink;ctx.beginPath();ctx.moveTo(cx-28,cy);ctx.lineTo(cx-8,cy);ctx.stroke();ctx.beginPath();ctx.arc(cx-5,cy,1.5,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(cx,cy,1.5,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(cx+5,cy,1.5,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.moveTo(cx+8,cy);ctx.lineTo(cx+28,cy);ctx.stroke();}
+  if(!isMoby){
+    ctx.fillStyle=ink;ctx.textAlign='center';
+    ctx.font='700 32px Georgia,"Times New Roman",serif';ctx.fillText('The Feedo Times',W/2,48);
+    ctx.lineWidth=1.5;ctx.strokeStyle=ink;ctx.beginPath();ctx.moveTo(pad,58);ctx.lineTo(W-pad,58);ctx.stroke();
+    ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(pad,62);ctx.lineTo(W-pad,62);ctx.stroke();
+    const d=new Date();const dateStr=(d.getMonth()+1)+'/'+d.getDate()+'/'+d.getFullYear();
+    ctx.font='8px "Courier New",monospace';ctx.textAlign='left';ctx.fillText(dateStr,pad,76);
+    ctx.textAlign='right';ctx.fillText('TAINAN',W-pad,76);ctx.textAlign='center';
+    ctx.font='700 10px "Times New Roman",serif';ctx.fillText('\u2014 PHOTO ARCHIVE \u2014',W/2,76);
+    ctx.font='7px "Courier New",monospace';ctx.fillStyle=grey;ctx.textAlign='left';ctx.fillText('VOL. MMXXVI',pad,89);
+    const issueNo='NO. '+Math.floor(Math.random()*9000+1000);ctx.textAlign='right';ctx.fillText(issueNo,W-pad,89);ctx.fillStyle=ink;
+    ctx.lineWidth=0.5;ctx.strokeStyle=ink;ctx.beginPath();ctx.moveTo(pad,95);ctx.lineTo(W-pad,95);ctx.stroke();
+    ctx.font='italic 12px Georgia,serif';ctx.textAlign='center';ctx.fillText('"Love is not found. It is practiced."',W/2,112);
+    drawOrnament(W/2,124);
   }
-  drawOrnament(W/2,124);
-  // === 照片格子 ===
-  const stripMobyOrder=mobyOrder||[0,1,2];
+  // === 照片格子 (不疊加 Moby) ===
   const capPool=CAPTIONS.slice();for(let j=capPool.length-1;j>0;j--){const k=Math.floor(Math.random()*(j+1));[capPool[j],capPool[k]]=[capPool[k],capPool[j]];}
   let capIdx=0;
   const romans=['I','II','III'];
+  const sides=['left','right','left'];
   let y=headerH;
   captures.forEach((c,idx)=>{
-    // 置中裁切 3:4
     const ar=c.width/c.height,tar=cellW/cellH;let sx,sy,sw,sh;
     if(ar>tar){sh=c.height;sw=c.height*tar;sx=(c.width-sw)/2;sy=0;}else{sw=c.width;sh=c.width/tar;sx=0;sy=(c.height-sh)/2;}
-    // 外框 (雙線效果)
-    ctx.lineWidth=1.5;ctx.strokeStyle=ink;
-    ctx.strokeRect(pad-1,y-1,cellW+2,cellH+2);
-    // 照片
+    if(!isMoby){ctx.lineWidth=1.5;ctx.strokeStyle=ink;ctx.strokeRect(pad-1,y-1,cellW+2,cellH+2);}
+    else{ctx.lineWidth=1;ctx.strokeStyle=ink;ctx.strokeRect(pad,y,cellW,cellH);}
     ctx.drawImage(c,sx,sy,sw,sh,pad,y,cellW,cellH);
-    // Moby 疊加
-    const mIdx=stripMobyOrder[idx%3];
-    const mi=mobyImgs[mIdx];
-    const mobyLeft=MOBY_SIDE[mIdx]==='left';
-    if(mi.complete && mi.naturalWidth){
-      const mh=cellH*0.5, mw=mh*(mi.naturalWidth/mi.naturalHeight);
-      const mx=mobyLeft?pad+4:pad+cellW-mw-4;
-      ctx.drawImage(mi, mx, y+cellH-mh, mw, mh);
-    }
-    // 字幕 (Moby 對面)
     const cap=capPool[capIdx++%capPool.length];
-    ctx.font='italic 12px Georgia,serif';
-    ctx.fillStyle='rgba(255,255,255,0.9)';
-    if(mobyLeft){ctx.textAlign='right';ctx.fillText(cap, pad+cellW-10, y+cellH-14);}
-    else{ctx.textAlign='left';ctx.fillText(cap, pad+10, y+cellH-14);}
+    ctx.font='italic 12px Georgia,serif';ctx.fillStyle='rgba(255,255,255,0.9)';
+    const capSide=sides[idx%3];
+    if(capSide==='left'){ctx.textAlign='left';ctx.fillText(cap, pad+10, y+cellH-14);}
+    else{ctx.textAlign='right';ctx.fillText(cap, pad+cellW-10, y+cellH-14);}
     ctx.fillStyle=ink;ctx.textAlign='center';
     y+=cellH;
-    // 格子間的羅馬數字分隔
-    if(idx<captures.length-1){
-      ctx.font='7px "Courier New",monospace';ctx.fillStyle=grey;
-      ctx.fillText(romans[idx],W/2,y+gap/2+3);
-      ctx.fillStyle=ink;
-    }
+    if(!isMoby && idx<captures.length-1){ctx.font='7px "Courier New",monospace';ctx.fillStyle=grey;ctx.fillText(romans[idx],W/2,y+gap/2+3);ctx.fillStyle=ink;}
     y+=gap;
   });
-  // === 刊尾 ===
-  y-=gap/2+2;
-  drawOrnament(W/2,y);
-  y+=18;
-  ctx.lineWidth=0.5;ctx.strokeStyle=ink;
-  ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(W-pad,y);ctx.stroke();
-  y+=18;
-  ctx.font='700 9px "Courier New",monospace';ctx.textAlign='center';
-  ctx.fillText('— NOW SERVING —',W/2,y);
-  y+=14;
-  ctx.font='700 13px Georgia,serif';
-  ctx.fillText('Our Tiramisu Assam',W/2,y);
-  y+=16;
-  ctx.lineWidth=0.3;
-  ctx.beginPath();ctx.moveTo(W/2-50,y);ctx.lineTo(W/2+50,y);ctx.stroke();
-  y+=14;
-  ctx.font='7px "Courier New",monospace';
-  ctx.fillText('FEEDO MUSEUM · TAINAN EDITION',W/2,y);
-  y+=11;
-  ctx.font='7px "Courier New",monospace';ctx.fillStyle='rgba(0,0,0,.35)';
-  ctx.fillText('@feedomuseum',W/2,y);ctx.fillStyle=ink;
+  // === Moby 放在圖框裝飾區 ===
+  const mobyPose=Math.floor(Math.random()*3);
+  const mbi=mobyImgs[mobyPose];
+  if(mbi.complete && mbi.naturalWidth){
+    if(isMoby){
+      const mh=55,mw=mh*(mbi.naturalWidth/mbi.naturalHeight);
+      ctx.drawImage(mbi, W-pad-mw-2, y-gap, mw, mh);
+      ctx.font='italic 10px Georgia,serif';ctx.textAlign='left';ctx.fillStyle=ink;
+      ctx.fillText('The Feedo Times',pad+5,y+8);
+      ctx.font='7px "Courier New",monospace';ctx.fillStyle='rgba(0,0,0,.35)';
+      ctx.fillText('@feedomuseum',pad+5,y+20);
+    }else{
+      const mh=40,mw=mh*(mbi.naturalWidth/mbi.naturalHeight);
+      ctx.drawImage(mbi, W-pad-mw, y-gap-8, mw, mh);
+    }
+  }
+  // === 刊尾 (僅 CLASSIC) ===
+  if(!isMoby){
+    y-=gap/2+2;drawOrnament(W/2,y);y+=18;
+    ctx.lineWidth=0.5;ctx.strokeStyle=ink;ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(W-pad,y);ctx.stroke();y+=18;
+    ctx.font='700 9px "Courier New",monospace';ctx.textAlign='center';ctx.fillStyle=ink;ctx.fillText('\u2014 NOW SERVING \u2014',W/2,y);y+=14;
+    ctx.font='700 13px Georgia,serif';ctx.fillText('Our Tiramisu Assam',W/2,y);y+=16;
+    ctx.lineWidth=0.3;ctx.beginPath();ctx.moveTo(W/2-50,y);ctx.lineTo(W/2+50,y);ctx.stroke();y+=14;
+    ctx.font='7px "Courier New",monospace';ctx.fillText('FEEDO MUSEUM \u00b7 TAINAN EDITION',W/2,y);
+    y+=11;ctx.font='7px "Courier New",monospace';ctx.fillStyle='rgba(0,0,0,.35)';ctx.fillText('@feedomuseum',W/2,y);ctx.fillStyle=ink;
+  }
   stripUrl=strip.toDataURL('image/png');
   $('stripImg').src=stripUrl;
 }
 
-$('againBtn').onclick=()=>{SFX.developStop();if(stream)stream.getTracks().forEach(t=>t.stop());$('camErr').classList.add('hidden');$('stripImg').classList.add('developing');$('devOverlay').style.display='none';show('screen-start');};
+$('againBtn').onclick=()=>{if(stream)stream.getTracks().forEach(t=>t.stop());$('camErr').classList.add('hidden');$('stripImg').classList.add('developing');$('devOverlay').style.display='none';show('screen-start');};
+
+// 從相簿選擇
+$('albumBtn').onclick=()=>$('albumInput').click();
+$('albumInput').onchange=async(e)=>{
+  const files=Array.from(e.target.files).slice(0,3);
+  if(files.length<3){$('camErr').textContent='請選擇 3 張照片';$('camErr').classList.remove('hidden');$('albumInput').value='';return;}
+  $('camErr').classList.add('hidden');
+  captures=[];
+  for(const file of files){
+    const img=await new Promise((res)=>{
+      const r=new FileReader();
+      r.onload=()=>{const im=new Image();im.onload=()=>res(im);im.src=r.result;};
+      r.readAsDataURL(file);
+    });
+    const c=document.createElement('canvas');
+    c.width=img.width;c.height=img.height;
+    const ctx=c.getContext('2d');
+    ctx.drawImage(img,0,0);
+    const imgData=ctx.getImageData(0,0,c.width,c.height),p=imgData.data;
+    for(let i=0;i<p.length;i+=4){
+      let r2=p[i],g=p[i+1],b=p[i+2];
+      if(selectedFilter==='film'){
+        let v=0.299*r2+0.587*g+0.114*b;p[i]=Math.min(255,v*1.15+15);p[i+1]=Math.min(255,v*0.95+10);p[i+2]=Math.min(255,v*0.75+5);
+        const gr=(Math.random()-0.5)*25;p[i]=Math.max(0,Math.min(255,p[i]+gr));p[i+1]=Math.max(0,Math.min(255,p[i+1]+gr));p[i+2]=Math.max(0,Math.min(255,p[i+2]+gr));
+      }else if(selectedFilter==='fade'){
+        let v=0.299*r2+0.587*g+0.114*b;v=(v-128)*0.7+138;p[i]=Math.max(0,Math.min(255,v*1.02+8));p[i+1]=Math.max(0,Math.min(255,v*0.98+6));p[i+2]=Math.max(0,Math.min(255,v*0.92+4));
+      }else if(selectedFilter==='color'){
+        p[i]=Math.max(0,Math.min(255,(r2-128)*1.05+130));p[i+1]=Math.max(0,Math.min(255,(g-128)*1.05+130));p[i+2]=Math.max(0,Math.min(255,(b-128)*1.05+130));
+      }else{
+        let v=0.299*r2+0.587*g+0.114*b;v=(v-128)*1.2+118;v=Math.max(0,Math.min(255,v));p[i]=p[i+1]=p[i+2]=v;
+      }
+    }
+    ctx.putImageData(imgData,0,0);
+    captures.push(c);
+  }
+  $('albumInput').value='';
+  const mobyOrder=[0,1,2];
+  buildStrip(mobyOrder);
+  if(TRACKER_URL) try{fetch(TRACKER_URL+'?t=normal');}catch(e2){}
+  const d=new Date();
+  const stamp='NO. '+Math.floor(Math.random()*9000+1000)+' \u00b7 '+d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0');
+  $('rewardStamp').textContent=stamp;
+  $('stripImg').classList.add('developing');
+  $('devOverlay').classList.remove('fade-out');
+  $('devOverlay').style.display='flex';
+  $('devBar').classList.remove('go');
+  show('screen-result');
+  await wait(50);$('devBar').classList.add('go');
+  await wait(2500);$('devOverlay').classList.add('fade-out');
+  await wait(300);$('stripImg').classList.remove('developing');
+};
 
 // 自動防快取: 每次載入都把頁面標記為最新,避免客人看到舊版
 (function(){
