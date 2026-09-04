@@ -717,7 +717,10 @@ function saveToRoom(){
   if(stream)stream.getTracks().forEach(t=>t.stop());
   location.href=u.toString();
 }
+// 遊戲還沒對外推，先把這顆藏起來。要開放改成 true（本機開發一律顯示）。
+const ROOM_LIVE=false;
 $('toRoomBtn').onclick=saveToRoom;
+if(!ROOM_LIVE && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) $('toRoomBtn').style.display='none';
 
 $('againBtn').onclick=()=>{if(stream)stream.getTracks().forEach(t=>t.stop());$('camErr').classList.add('hidden');$('stripImg').classList.add('developing');$('devOverlay').style.display='none';idHolderName='';idBirth='';idPlace='';const nr=$('idNameRow');if(nr)nr.style.display='none';show('screen-start');};
 
