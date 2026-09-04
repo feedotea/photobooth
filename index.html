@@ -190,6 +190,7 @@
       <p style="font-family:Georgia,serif;font-size:13px;font-style:italic;letter-spacing:.04em;color:var(--ink);margin-top:16px;line-height:1.7;">Save your print.<br>Post it. Tag <b>@feedomuseum</b>.</p>
     </div>
     <div class="actions">
+      <button class="btn" id="toRoomBtn">存進我的房間</button>
       <button class="btn ghost" id="againBtn">再拍一次</button>
     </div>
   </section>
@@ -656,6 +657,67 @@ function buildStrip(mobyOrder){
   stripUrl=strip.toDataURL('image/png');
   $('stripImg').src=stripUrl;
 }
+
+/* ===== 存進我的房間 =====
+   把第一張原始拍攝點陣化成 1-bit，用網址帶到 PET。
+   原圖不離開這支手機 —— 送出去的只有黑白點陣。
+
+   取 captures[0] 而不是合成後的拍貼條：拍貼條的版面隨圖框改變
+   (經典 3 張 / MOBY 5 張 / 證件照 1 張)，要挖出照片得靠寫死的座標,
+   猜錯就送出一塊邊框。原始畫面不需要知道版面。
+
+   長按存圖那條路完全保留,這只是多一條。 */
+// 本機開發時送到本機的房間（feedo-pet 的 serve.sh 開在 8123），正式站送正式的
+const PET_URL=/^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+  ? 'http://localhost:8123/' : 'https://pet.feedomuseum.com/';
+const ROOM_W=60, ROOM_H=80;
+
+function roomDither(src,sx,sy,sw,sh,w,h){
+  const c=document.createElement('canvas');c.width=w;c.height=h;
+  const x=c.getContext('2d');x.drawImage(src,sx,sy,sw,sh,0,0,w,h);
+  const d=x.getImageData(0,0,w,h).data;
+  const g=new Float32Array(w*h);
+  for(let i=0;i<w*h;i++) g[i]=0.299*d[i*4]+0.587*d[i*4+1]+0.114*d[i*4+2];
+  const bits=new Uint8Array(Math.ceil(w*h/8));
+  // Floyd-Steinberg:誤差往右與往下擴散,用點的疏密模擬灰階。
+  // 報紙印照片就是這個原理,所以點陣化不是降級,是「被登在報上」。
+  for(let y=0;y<h;y++)for(let xx=0;xx<w;xx++){
+    const i=y*w+xx,old=g[i],nv=old<128?0:255,err=old-nv;
+    g[i]=nv;
+    if(nv===0) bits[i>>3]|=(0x80>>(i&7));
+    if(xx+1<w)          g[i+1]     +=err*7/16;
+    if(y+1<h&&xx>0)     g[i+w-1]   +=err*3/16;
+    if(y+1<h)           g[i+w]     +=err*5/16;
+    if(y+1<h&&xx+1<w)   g[i+w+1]   +=err*1/16;
+  }
+  return bits;
+}
+
+function roomB64(bytes){
+  let s='';for(const b of bytes)s+=String.fromCharCode(b);
+  return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+
+function saveToRoom(){
+  const c=captures[0];
+  if(!c){return;}
+  // 相機是 4:3 或 16:9,房間要 3:4。置中裁切而不是壓扁 ——
+  // 裁切只是少看到兩側,壓扁會讓人變形。(與 buildStrip 同一套算法)
+  const tar=ROOM_W/ROOM_H, ar=c.width/c.height;
+  let sw,sh;
+  if(ar>tar){sh=c.height;sw=c.height*tar;} else {sw=c.width;sh=c.width/tar;}
+  const sx=(c.width-sw)/2, sy=(c.height-sh)/2;
+
+  const bits=roomDither(c,sx,sy,sw,sh,ROOM_W,ROOM_H);
+  const u=new URL(PET_URL);
+  u.searchParams.set('photo',roomB64(bits));
+  u.searchParams.set('w',ROOM_W);
+  u.searchParams.set('h',ROOM_H);
+  u.searchParams.set('frame',selectedFrame);
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+  location.href=u.toString();
+}
+$('toRoomBtn').onclick=saveToRoom;
 
 $('againBtn').onclick=()=>{if(stream)stream.getTracks().forEach(t=>t.stop());$('camErr').classList.add('hidden');$('stripImg').classList.add('developing');$('devOverlay').style.display='none';idHolderName='';idBirth='';idPlace='';const nr=$('idNameRow');if(nr)nr.style.display='none';show('screen-start');};
 
