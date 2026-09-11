@@ -717,8 +717,8 @@ function saveToRoom(){
   if(stream)stream.getTracks().forEach(t=>t.stop());
   location.href=u.toString();
 }
-// 遊戲還沒對外推，先把這顆藏起來。要開放改成 true（本機開發一律顯示）。
-const ROOM_LIVE=false;
+// 跟房間的 LINKS.boothReady 是一組，兩邊一起開（2026-09-12 遊戲定版上線後打開）。
+const ROOM_LIVE=true;
 $('toRoomBtn').onclick=saveToRoom;
 if(!ROOM_LIVE && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) $('toRoomBtn').style.display='none';
 
