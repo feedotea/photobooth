@@ -241,13 +241,13 @@ const TEMPLATES = [
   {id:'cream', name:'鮮奶油專賣店', src:'images/cream.webp', w:587, h:1494,
     slots:[[217,229,187,252],[225,904,177,239]]},
   {id:'idblue', frame:'id', name:'證件照 · 藍', src:'images/idblue.webp', w:1413, h:880,
-    slots:[[116,154,509,586]]},
+    slots:[[116,154,509,540]]},
   {id:'idpink', frame:'id', name:'證件照 · 粉', src:'images/idpink.webp', w:1414, h:881,
-    slots:[[117,154,509,586]]}
+    slots:[[117,154,509,540]]}
 ];
 // 模板圖的檔名會沿用,但換圖時尺寸和照片框位置都會變。如果瀏覽器或 CDN 還拿著舊圖,
 // 新座標套在舊圖上就會錯位(照片被插畫蓋住,只露出一條邊)。換模板圖時一定要改這個版本號。
-const ASSET_V = '20260914';
+const ASSET_V = '20260914c';   // c:證件照照片框清掉紙紋碎點,說明小字移到照片下方
 TEMPLATES.forEach(t => { t.src += '?v=' + ASSET_V; });
 const COUNT_FROM = 3;
 // 成品底色:插畫是去背的,這個顏色會出現在輪廓外的凹角。
