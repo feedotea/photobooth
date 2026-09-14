@@ -93,6 +93,7 @@
   /* ===== 確認 ===== */
   #screen-check{justify-content:center;}
   #checkImg{max-width:210px;width:100%;height:auto;display:block;box-shadow:0 4px 20px rgba(0,0,0,.16);margin-bottom:24px;}
+  #checkImg.wide,#outImg.wide{max-width:320px;}
 
   /* ===== 列印(成品從拍貼機吐出來) ===== */
   #screen-print{justify-content:center;}
@@ -227,17 +228,27 @@
 const TRACKER_URL = 'https://script.google.com/macros/s/AKfycbwmBQzkBw4s15BDI_6t3EBdyq6PYzwRGHWJdZAoIVy2ci3hCusI9fnyB2PFWPBNp5Sigg/exec';
 
 // ===== 模板設定 =====
-// slots 座標是模板圖原尺寸下的挖空位置 [x, y, w, h],由插畫透明區自動量測得出
+// slots 是模板圖原尺寸下的照片框 [x, y, w, h]。
+// 插畫的照片框是有上色的,匯出時用顏色 + 黑色輪廓線偵測出來再挖成透明,座標從挖好的洞量測。
+// frame:送到房間的圖框名稱(不填就用 id)。房間的 GEAR_RULES 認 'id'(吊繩)和 'moby'(領結)。
 const TEMPLATES = [
-  {id:'polaroid', name:'Polaroid 拍立得', src:'images/polaroid.webp', w:978, h:1500,
-    slots:[[422,923,490,510]]},
-  {id:'milk', name:'MISSING 牛奶盒', src:'images/milk.webp', w:756, h:1500,
-    slots:[[193,479,242,303],[458,479,249,303]]},
-  {id:'tv', name:'Moby 電視牆', src:'images/tv.webp', w:834, h:1500,
-    slots:[[203,416,331,272],[199,789,333,270],[200,1156,333,268]]},
-  {id:'cream', name:'鮮奶油專賣店', src:'images/cream.webp', w:933, h:1500,
-    slots:[[176,172,176,237],[603,172,176,237],[166,910,176,237],[599,912,175,237]]}
+  {id:'moby', name:"Moby's Show", src:'images/moby.webp', w:587, h:1495,
+    slots:[[141,541,233,190],[139,802,233,189],[141,1058,232,187]]},
+  {id:'milk', name:"Moby's Fresh Milk", src:'images/milk.webp', w:583, h:1482,
+    slots:[[176,756,150,189],[341,756,155,189]]},
+  {id:'polaroid', name:'拍立得 3 連張', src:'images/polaroid.webp', w:587, h:1492,
+    slots:[[177,522,260,270],[161,827,268,281],[169,1143,268,276]]},
+  {id:'cream', name:'鮮奶油專賣店', src:'images/cream.webp', w:587, h:1494,
+    slots:[[217,229,187,252],[225,904,177,239]]},
+  {id:'idblue', frame:'id', name:'證件照 · 藍', src:'images/idblue.webp', w:1413, h:880,
+    slots:[[116,154,509,586]]},
+  {id:'idpink', frame:'id', name:'證件照 · 粉', src:'images/idpink.webp', w:1414, h:881,
+    slots:[[117,154,509,586]]}
 ];
+// 模板圖的檔名會沿用,但換圖時尺寸和照片框位置都會變。如果瀏覽器或 CDN 還拿著舊圖,
+// 新座標套在舊圖上就會錯位(照片被插畫蓋住,只露出一條邊)。換模板圖時一定要改這個版本號。
+const ASSET_V = '20260914';
+TEMPLATES.forEach(t => { t.src += '?v=' + ASSET_V; });
 const COUNT_FROM = 3;
 // 成品底色:插畫是去背的,這個顏色會出現在輪廓外的凹角。
 // 深墨比紙色好的原因:限動的底本來就是黑的,接上去等於滿版;
@@ -293,7 +304,10 @@ function applyFilter(ctx, w, h){
 // ===== 模板輪播 =====
 function drawPreview(){
   const t = tpl(), im = tplImgs[t.id];
-  const cv = $('tplPreview'), scale = 300 / t.h;      // 預覽高度固定 300px
+  // 同時限制寬和高:直式模板吃滿高度,橫式(證件照)吃滿寬度,都不會變形。
+  // 畫面還沒顯示時 clientWidth 是 0,先用 260 頂著,enter() 會再畫一次
+  const stageW = document.querySelector('.tpl-stage').clientWidth || 260;
+  const cv = $('tplPreview'), scale = Math.min(300 / t.h, stageW / t.w);
   cv.width = Math.round(t.w*scale); cv.height = Math.round(t.h*scale);
   cv.style.width = cv.width+'px'; cv.style.height = cv.height+'px';
   const ctx = cv.getContext('2d');
@@ -509,6 +523,9 @@ function compose(){
   if(im.complete && im.naturalWidth) ctx.drawImage(im, 0, 0, t.w, t.h);
   outUrl = cv.toDataURL('image/png');
   $('outImg').src = outUrl;
+  const wide = t.w > t.h;
+  $('outImg').classList.toggle('wide', wide);
+  $('checkImg').classList.toggle('wide', wide);
   $('dlBtn').href = outUrl;
   $('dlBtn').setAttribute('download', 'feedo-'+t.id+'.png');
 }
@@ -644,14 +661,14 @@ function saveToRoom(){
   u.searchParams.set('h',ROOM_H);
   // 房間用這個值算「用某個圖框拍過」的解鎖條件(roomModel.js 的 GEAR_RULES),
   // 也會印在照片下方。改模板 id 的話那邊要一起改。
-  u.searchParams.set('frame',tpl().id);
+  u.searchParams.set('frame',tpl().frame || tpl().id);
   stopCamera();
   location.href=u.toString();
 }
 // 跟房間的 LINKS.boothReady 是一組,兩邊一起開(2026-09-12 遊戲定版上線後打開)。
-// 2026-09-13 改版時先關掉:新模板的 id(polaroid/milk/tv/cream)跟房間
-// GEAR_RULES 綁的舊名稱(id/moby)對不上,吊繩和領結會沒人解得開。
-// 等那邊的規則更新後再打開 —— 打開前記得房間的 LINKS.boothReady 也要一起開。
+// 2026-09-13 改版時先關掉:當時的模板 id 跟房間 GEAR_RULES 綁的名稱(id/moby)對不上。
+// 2026-09-14 換模板後已對齊:證件照送 frame=id(吊繩)、Moby's Show 的 id 是 moby(領結),
+// 房間那邊不用改。仍然關著是因為還沒決定重開 —— 打開前記得房間的 LINKS.boothReady 也要一起開。
 const ROOM_LIVE=false;
 $('toRoomBtn').onclick=saveToRoom;
 if(!ROOM_LIVE && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) $('toRoomBtn').style.display='none';
