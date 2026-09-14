@@ -118,6 +118,7 @@
   .dev-dots::after{content:'';animation:devDots 1.5s steps(4,end) infinite;}
   @keyframes devDots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
   .save-hint{font-family:"Courier New",monospace;font-size:10px;letter-spacing:.06em;color:var(--grey);line-height:1.8;margin-top:14px;}
+  .save-hint.nudge{font-size:12px;color:var(--ink);background:#fff3c4;border:1.5px solid var(--ink);padding:10px 12px;max-width:320px;}
   .tag-line{font-family:Georgia,serif;font-size:13px;font-style:italic;letter-spacing:.04em;margin-top:12px;line-height:1.7;}
   .actions{width:100%;max-width:330px;margin-top:18px;}
 </style>
@@ -213,10 +214,10 @@
     </div>
     <img id="outImg" alt="拍貼成品">
     <canvas id="out" class="hidden"></canvas>
-    <p class="save-hint">⬇ 長按照片 →「加入照片」存圖</p>
+    <p class="save-hint" id="saveHint">⬇ 長按照片 →「加入照片」存圖</p>
     <p class="tag-line">Save your print.<br>Post it. Tag <b>@feedomuseum</b>.</p>
     <div class="actions">
-      <a class="btn" id="dlBtn" download="feedo-photobooth.png" style="display:block;text-decoration:none;text-align:center;">下載照片</a>
+      <button class="btn" id="dlBtn">儲存照片</button>
       <button class="btn" id="toRoomBtn">存進我的房間</button>
       <button class="btn ghost" id="againBtn">再拍一次</button>
     </div>
@@ -260,7 +261,7 @@ const PRINT_BG = '#221e1c';
 const CHUTE = { left:87/424, width:255/424, top:713/1500, bottom:1415/1500 };
 
 let tplIndex = 0, mode = 'shoot', selectedFilter = 'color';
-let stream = null, captures = [], outUrl = null, facing = 'user';
+let stream = null, captures = [], outUrl = null, outBlob = null, facing = 'user';
 
 const $ = id => document.getElementById(id);
 const video = $('video');
@@ -526,8 +527,12 @@ function compose(){
   const wide = t.w > t.h;
   $('outImg').classList.toggle('wide', wide);
   $('checkImg').classList.toggle('wide', wide);
-  $('dlBtn').href = outUrl;
-  $('dlBtn').setAttribute('download', 'feedo-'+t.id+'.png');
+  // 下載/分享用 blob,不用 data URL:Chrome 的 data URL 有 2MB 上限,
+  // 證件照合成手機照片後大約 2MB,超過就會「按了沒反應」。
+  // toBlob 會在呼叫當下擷取畫面,之後重畫也不影響這一份
+  outBlob = new Promise(res => cv.toBlob(res, 'image/png'));
+  $('saveHint').classList.remove('nudge');
+  $('saveHint').textContent = '⬇ 長按照片 →「加入照片」存圖';
 }
 
 function finish(){
@@ -603,6 +608,44 @@ $('againBtn').onclick = () => {
 // ===== 初始化 =====
 buildTplDots();
 drawPreview();
+
+/* ===== 儲存照片 =====
+   三種環境三種做法,不能只靠 <a download>:
+   - iPhone / iPad:系統分享面板,裡面有「儲存影像」,會直接進相簿
+     (iOS 的 <a download> 只會存到「檔案」App,客人找不到)
+   - IG / LINE / FB 內建瀏覽器:下載和分享常被擋,改成明確教他長按或換瀏覽器
+   - Android / 電腦:blob 網址直接下載 */
+function isIOS(){
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);   // iPadOS 會偽裝成 Mac
+}
+function isInAppBrowser(){ return /Instagram|FBAN|FBAV|Line\/|MicroMessenger/i.test(navigator.userAgent); }
+
+function nudgeLongPress(){
+  const h = $('saveHint');
+  h.textContent = '這個瀏覽器不能直接下載:請長按上面的照片 →「加入照片」,或點右上角「⋯」改用 Safari / Chrome 開啟';
+  h.classList.add('nudge');
+  $('outImg').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+$('dlBtn').onclick = async () => {
+  const blob = outBlob && await outBlob;
+  if(!blob){ nudgeLongPress(); return; }
+  const name = 'feedo-' + tpl().id + '.png';
+  const file = new File([blob], name, {type:'image/png'});
+
+  if(isIOS() && navigator.canShare && navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file]}); return; }
+    catch(e){ if(e.name === 'AbortError') return; }   // 客人自己關掉分享面板,不用做任何事
+  }
+  if(isIOS() || isInAppBrowser()){ nudgeLongPress(); return; }
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+};
 
 /* ===== 存進我的房間 =====
    把第一張原始拍攝點陣化成 1-bit,用網址帶到 PET。
