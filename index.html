@@ -233,14 +233,14 @@ const TRACKER_URL = 'https://script.google.com/macros/s/AKfycbwmBQzkBw4s15BDI_6t
 // 插畫的照片框是有上色的,匯出時用顏色 + 黑色輪廓線偵測出來再挖成透明,座標從挖好的洞量測。
 // frame:送到房間的圖框名稱(不填就用 id)。房間的 GEAR_RULES 認 'id'(吊繩)和 'moby'(領結)。
 const TEMPLATES = [
-  {id:'moby', name:"Moby's Show", src:'images/moby.webp', w:587, h:1495,
-    slots:[[141,541,233,190],[139,802,233,189],[141,1058,232,187]]},
-  {id:'milk', name:"Moby's Fresh Milk", src:'images/milk.webp', w:583, h:1482,
-    slots:[[176,756,150,189],[341,756,155,189]]},
-  {id:'polaroid', name:'拍立得 3 連張', src:'images/polaroid.webp', w:587, h:1492,
-    slots:[[177,522,260,270],[161,827,268,281],[169,1143,268,276]]},
-  {id:'cream', name:'鮮奶油專賣店', src:'images/cream.webp', w:587, h:1494,
-    slots:[[217,229,187,252],[225,904,177,239]]},
+  {id:'moby', name:"Moby's Show", src:'images/moby.webp', w:1057, h:2689,
+    slots:[[254,972,419,344],[250,1441,421,342],[253,1901,419,338]]},
+  {id:'milk', name:"Moby's Fresh Milk", src:'images/milk.webp', w:1058, h:2689,
+    slots:[[319,1372,273,343],[618,1372,282,342]]},
+  {id:'polaroid', name:'拍立得 3 連張', src:'images/polaroid.webp', w:1059, h:2690,
+    slots:[[319,941,470,488],[290,1491,484,509],[305,2060,483,500]]},
+  {id:'cream', name:'鮮奶油專賣店', src:'images/cream.webp', w:1058, h:2689,
+    slots:[[392,411,337,456],[405,1624,320,434]]},
   {id:'idblue', frame:'id', name:'證件照 · 藍', src:'images/idblue.webp', w:1413, h:880,
     slots:[[116,154,509,540]]},
   {id:'idpink', frame:'id', name:'證件照 · 粉', src:'images/idpink.webp', w:1414, h:881,
@@ -248,7 +248,7 @@ const TEMPLATES = [
 ];
 // 模板圖的檔名會沿用,但換圖時尺寸和照片框位置都會變。如果瀏覽器或 CDN 還拿著舊圖,
 // 新座標套在舊圖上就會錯位(照片被插畫蓋住,只露出一條邊)。換模板圖時一定要改這個版本號。
-const ASSET_V = '20260914d';   // d:牛奶盒右格挖掉蓋在照片上的乳牛斑點
+const ASSET_V = '20260917';    // 直式模板改用原生解析度(照片框約放大 1.8 倍)
 TEMPLATES.forEach(t => { t.src += '?v=' + ASSET_V; });
 const COUNT_FROM = 3;
 // 成品底色:插畫是去背的,這個顏色會出現在輪廓外的凹角。
@@ -271,7 +271,14 @@ const shotsNeeded = () => tpl().slots.length;
 
 // 預先載入模板圖
 const tplImgs = {};
-TEMPLATES.forEach(t => { const im = new Image(); im.src = t.src; tplImgs[t.id] = im; });
+TEMPLATES.forEach(t => { tplImgs[t.id] = new Image(); });
+// 用到才載入。原生解析度的模板加起來有 2MB 多,一進站就全抓會拖慢首頁
+function loadTpl(t){
+  const im = tplImgs[t.id];
+  if(!im.src) im.src = t.src;
+  if(im.complete && im.naturalWidth) return Promise.resolve(im);
+  return new Promise(res => { im.onload = () => res(im); im.onerror = () => res(im); });
+}
 
 function show(s){
   document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
@@ -328,8 +335,11 @@ function drawPreview(){
   if(im.complete && im.naturalWidth){
     ctx.drawImage(im, 0, 0, cv.width, cv.height);
   }else{
-    im.onload = drawPreview;
+    loadTpl(t).then(() => { if(tpl() === t) drawPreview(); });   // 載好且還停在同一張才重畫
   }
+  // 先偷抓左右兩張,滑過去時就不用等
+  loadTpl(TEMPLATES[(tplIndex+1) % TEMPLATES.length]);
+  loadTpl(TEMPLATES[(tplIndex-1+TEMPLATES.length) % TEMPLATES.length]);
   $('tplName').textContent = t.name;
   $('tplBadge').textContent = t.slots.length + ' 格';
   document.querySelectorAll('#tplDots span').forEach((d,i) => d.classList.toggle('on', i===tplIndex));
@@ -398,7 +408,7 @@ async function startCamera(){
   try{
     stopCamera();
     stream = await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:facing, width:{ideal:1920}, height:{ideal:1920}}, audio:false
+      video:{facingMode:facing, width:{ideal:1920}, height:{ideal:1440}}, audio:false
     });
     video.srcObject = stream;
     video.classList.toggle('mirror', facing==='user');
@@ -462,7 +472,7 @@ async function runSequence(){
   $('capStatus').textContent = '沖洗中…';
   stopCamera();
   await wait(300);
-  finish();
+  await finish();
 }
 
 // ===== 從相簿上傳 =====
@@ -491,7 +501,7 @@ $('albumInput').onchange = async e => {
     captures.push(c);
   }
   $('albumInput').value = '';
-  finish();
+  await finish();
 };
 
 // ===== 合成 =====
@@ -535,7 +545,8 @@ function compose(){
   $('saveHint').textContent = '⬇ 長按照片 →「加入照片」存圖';
 }
 
-function finish(){
+async function finish(){
+  await loadTpl(tpl());        // 沒載好就合成的話,插畫會整個不見
   compose();
   if(TRACKER_URL) try{ fetch(TRACKER_URL+'?t='+tpl().id); }catch(e){}
   const d = new Date();
