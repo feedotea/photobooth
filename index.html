@@ -316,10 +316,16 @@ function drawPreview(){
   // 畫面還沒顯示時 clientWidth 是 0,先用 260 頂著,enter() 會再畫一次
   const stageW = document.querySelector('.tpl-stage').clientWidth || 260;
   const cv = $('tplPreview'), scale = Math.min(300 / t.h, stageW / t.w);
-  cv.width = Math.round(t.w*scale); cv.height = Math.round(t.h*scale);
-  cv.style.width = cv.width+'px'; cv.style.height = cv.height+'px';
+  const cssW = Math.round(t.w*scale), cssH = Math.round(t.h*scale);
+  // canvas 要做成螢幕倍率的實際像素,顯示尺寸再用 CSS 縮回來。
+  // 只給 CSS 尺寸的話,手機(2x/3x)會把這張小圖放大顯示,看起來就是糊的
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  cv.width = Math.round(cssW*dpr); cv.height = Math.round(cssH*dpr);
+  cv.style.width = cssW+'px'; cv.style.height = cssH+'px';
   const ctx = cv.getContext('2d');
-  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);       // 之後照 CSS 像素畫就好
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.clearRect(0,0,cssW,cssH);
   // 挖空處填淺灰 + 編號,讓人一眼看懂照片會放哪、拍的順序
   t.slots.forEach((s,i) => {
     const x=s[0]*scale, y=s[1]*scale, w=s[2]*scale, h=s[3]*scale;
@@ -333,7 +339,7 @@ function drawPreview(){
     }
   });
   if(im.complete && im.naturalWidth){
-    ctx.drawImage(im, 0, 0, cv.width, cv.height);
+    ctx.drawImage(im, 0, 0, cssW, cssH);
   }else{
     loadTpl(t).then(() => { if(tpl() === t) drawPreview(); });   // 載好且還停在同一張才重畫
   }
