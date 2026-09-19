@@ -725,11 +725,11 @@ function saveToRoom(){
   stopCamera();
   location.href=u.toString();
 }
-// 跟房間的 LINKS.boothReady 是一組,兩邊一起開(2026-09-12 遊戲定版上線後打開)。
-// 2026-09-13 改版時先關掉:當時的模板 id 跟房間 GEAR_RULES 綁的名稱(id/moby)對不上。
-// 2026-09-14 換模板後已對齊:證件照送 frame=id(吊繩)、Moby's Show 的 id 是 moby(領結),
-// 房間那邊不用改。仍然關著是因為還沒決定重開 —— 打開前記得房間的 LINKS.boothReady 也要一起開。
-const ROOM_LIVE=false;
+// 跟房間的 LINKS.boothReady 是一組,兩邊一起開。
+// 2026-09-13 改版時關掉過:當時的模板 id 對不上房間 GEAR_RULES(id/moby)。
+// 2026-09-19 重新打開:證件照送 frame=id(吊繩)、Moby's Show 送 moby(領結),
+// 已確認正式站的 boothReady=true、規則沒變。之後改模板 id 前先看 roomModel.js。
+const ROOM_LIVE=true;
 $('toRoomBtn').onclick=saveToRoom;
 if(!ROOM_LIVE && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) $('toRoomBtn').style.display='none';
 
