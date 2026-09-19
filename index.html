@@ -590,7 +590,28 @@ function layoutChute(){
 $('chuteImg').addEventListener('load', layoutChute);
 window.addEventListener('resize', layoutChute);
 
+/* 店裡的出單機。電腦上跑著 feedo-pet 的 tools/print_bridge.py 才叫得到，
+   顧客自己的手機問不到 127.0.0.1，就只有動畫、照舊長按存圖。
+   橫式的證件照轉 90 度印，才不會縮成 4.5 公分寬的小條。 */
+const PRINT_BRIDGE = 'http://127.0.0.1:8930';
+let printerReady = null;
+function checkPrinter(){
+  const ctl = new AbortController();
+  setTimeout(() => ctl.abort(), 800);
+  return fetch(PRINT_BRIDGE + '/health', {signal: ctl.signal})
+    .then(r => r.json()).then(j => !!(j.ok && j.printer)).catch(() => false);
+}
+printerReady = checkPrinter();
+async function realPrint(){
+  if(!await printerReady) return false;
+  const t = tpl(), blob = await outBlob;
+  const q = '?dither=1' + (t.w > t.h ? '&rotate=1' : '');
+  return fetch(PRINT_BRIDGE + '/print' + q, {method:'POST', body: blob})
+    .then(r => r.json()).then(j => j.ok).catch(() => false);
+}
+
 $('printBtn').onclick = async () => {
+  const printing = realPrint();       // 跟出紙動畫同時跑,動畫約 3 秒、印一張也差不多
   const po = $('printOut');
   po.src = outUrl;
   po.classList.remove('out');
@@ -604,6 +625,7 @@ $('printBtn').onclick = async () => {
   await wait(80);
   po.classList.add('out');
   await wait(2700);
+  await printing;
   $('printStatus').textContent = '請取件';
   $('pickupBtn').disabled = false;
 };
