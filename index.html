@@ -590,12 +590,14 @@ function layoutChute(){
 $('chuteImg').addEventListener('load', layoutChute);
 window.addEventListener('resize', layoutChute);
 
-/* 店裡的出單機。電腦上跑著 feedo-pet 的 tools/print_bridge.py 才叫得到，
-   顧客自己的手機問不到 127.0.0.1，就只有動畫、照舊長按存圖。
-   橫式的證件照轉 90 度印，才不會縮成 4.5 公分寬的小條。 */
+/* 店裡的出單機。兩條路:店裡 iPad 的 FEEDO App 會注入 window.FeedoNativePrint
+   (見 feedo-kiosk),電腦上則是 feedo-pet 的 tools/print_bridge.py。
+   顧客自己的手機兩個都問不到,就只有動畫、照舊長按存圖。
+   橫式的證件照轉 90 度印,才不會縮成 4.5 公分寬的小條。 */
 const PRINT_BRIDGE = 'http://127.0.0.1:8930';
 let printerReady = null;
 function checkPrinter(){
+  if(window.FeedoNativePrint) return FeedoNativePrint.ready();
   const ctl = new AbortController();
   setTimeout(() => ctl.abort(), 800);
   return fetch(PRINT_BRIDGE + '/health', {signal: ctl.signal})
@@ -604,8 +606,13 @@ function checkPrinter(){
 printerReady = checkPrinter();
 async function realPrint(){
   if(!await printerReady) return false;
-  const t = tpl(), blob = await outBlob;
-  const q = '?dither=1' + (t.w > t.h ? '&rotate=1' : '');
+  const t = tpl(), rotate = t.w > t.h;
+  if(window.FeedoNativePrint){
+    const j = await FeedoNativePrint.print(outUrl, {dither: true, rotate});
+    return !!(j && j.ok);
+  }
+  const blob = await outBlob;
+  const q = '?dither=1' + (rotate ? '&rotate=1' : '');
   return fetch(PRINT_BRIDGE + '/print' + q, {method:'POST', body: blob})
     .then(r => r.json()).then(j => j.ok).catch(() => false);
 }
