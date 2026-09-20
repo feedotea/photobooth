@@ -281,7 +281,60 @@
   </section>
 </div>
 
+<!-- 拍貼條下緣那個 QR。跟 claim 站用的是同一支,版號寫死 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
+/* ===== 音效 =====
+   程式產生,不載音檔 —— 跟房間遊戲那邊同一套做法(pet 的 src/game/soundFx.js)。
+   店裡站著的客人看不到細微的畫面變化,聲音才知道「拍了沒」「好了沒」。
+   iOS 要在使用者按過之後才准出聲,所以第一次按按鈕時才建立 AudioContext。 */
+let AC = null;
+function ac(){
+  if(AC) { if(AC.state === 'suspended') AC.resume().catch(()=>{}); return AC; }
+  const A = window.AudioContext || window.webkitAudioContext;
+  if(!A) return null;
+  try { AC = new A(); } catch(e) { return null; }
+  return AC;
+}
+function tone(freq, dur, gain, type, delay, endFreq){
+  const a = ac(); if(!a) return;
+  const t = a.currentTime + (delay || 0);
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = type || 'square';
+  o.frequency.setValueAtTime(Math.max(30, freq), t);
+  if(endFreq) o.frequency.exponentialRampToValueAtTime(Math.max(30, endFreq), t + dur);
+  g.gain.setValueAtTime(Math.max(.0001, gain || .02), t);
+  g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(g); g.connect(a.destination);
+  o.start(t); o.stop(t + dur + .02);
+}
+function noise(dur, gain, lowpass, delay){
+  const a = ac(); if(!a) return;
+  const t = a.currentTime + (delay || 0);
+  const n = Math.max(16, Math.floor(a.sampleRate * dur));
+  const b = a.createBuffer(1, n, a.sampleRate), d = b.getChannelData(0);
+  for(let i=0;i<n;i++) d[i] = Math.random()*2-1;
+  const src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = b; f.type='lowpass'; f.frequency.value = lowpass || 1600;
+  g.gain.setValueAtTime(gain || .02, t);
+  g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  src.connect(f); f.connect(g); g.connect(a.destination);
+  src.start(t); src.stop(t + dur + .02);
+}
+function sfx(kind){
+  switch(kind){
+    case 'tap':    tone(520, .03, .03, 'square'); break;              // 按鈕
+    case 'ready':  tone(440, .06, .03, 'square'); tone(660, .07, .03, 'square', .07); break;
+    case 'count':  tone(700, .05, .035, 'square'); break;             // 3 2 1
+    case 'shutter':                                                    // 喀嚓
+      noise(.05, .05, 3000); tone(1200, .03, .03, 'square', .01);
+      tone(300, .05, .03, 'square', .05); break;
+    case 'develop': tone(220, .5, .02, 'triangle', 0, 420); break;    // 沖洗中
+    case 'done':   [0,.09,.18].forEach((d,i)=>tone(520+i*180, .09, .035, 'square', d)); break;
+    case 'fail':   tone(200, .18, .03, 'square', 0, 120); break;
+  }
+}
+
 // ===== 追蹤網址 =====
 const TRACKER_URL = 'https://script.google.com/macros/s/AKfycbwmBQzkBw4s15BDI_6t3EBdyq6PYzwRGHWJdZAoIVy2ci3hCusI9fnyB2PFWPBNp5Sigg/exec';
 
@@ -526,13 +579,15 @@ async function runSequence(){
   // Moby 先出場。直接倒數的話,客人還在找鏡頭在哪就已經拍完第一張
   $('pressReady').classList.remove('hidden');
   $('capStatus').textContent = 'MOBY 就位';
+  sfx('ready');
   await wait(1500);
   $('pressReady').classList.add('hidden');
   for(let i=0;i<n;i++){
     $('capStatus').textContent = '第 '+(i+1)+' 格 / 共 '+n+' 格';
-    for(let c=COUNT_FROM;c>0;c--){ $('countdown').textContent = c; await wait(1000); }
+    for(let c=COUNT_FROM;c>0;c--){ $('countdown').textContent = c; sfx('count'); await wait(1000); }
     $('countdown').textContent = '';
     $('flash').classList.add('fire');
+    sfx('shutter');
     capturePhoto();
     $('dot'+i).classList.add('done');
     await wait(420); $('flash').classList.remove('fire'); await wait(450);
@@ -670,13 +725,49 @@ printerReady = checkPrinter();
    紙會被帶回家,掃了就回到 FEEDO 房間 —— 475 位顧客裡有 453 位只來過一次,
    這條 QR 是少數能把人帶回來的東西。?from=print 讓我們分得出他是從紙來的。 */
 const PRINT_W = 576;                       // 出單機的可印寬度(點)
+/* 紙上的 QR 只放連結,不放照片:照片塞進 QR 的版本(2026-09-20)掃得到、
+   房間也打得開,但照片始終沒進資料庫,原因沒查出來。短連結只要 31 個模組、
+   2.3 公分,怎麼掃都讀得到;照片本身走線上那條(手機按「存進我的房間」)。 */
+const ROOM_QR = 'https://pet.feedomuseum.com/?from=print';
+const QR_DOTS_MAX = 6, QR_DOTS_MIN = 3;    // 一個模組印幾點。實印:6 點斜著也穩
+const QR_MAX_DOTS = 528;                   // 左右留白邊(quiet zone)
+
+function qrCanvas(text, px){
+  if(!window.QRCode) return null;
+  const box = document.createElement('div');
+  // 容錯 M:L 只在正對著掃才穩,斜一點就讀不回來(2026-09-20 實印比對)
+  new QRCode(box, {text, width:px, height:px, correctLevel:QRCode.CorrectLevel.M});
+  return box.querySelector('canvas');
+}
+
+/* 量模組數:中間那一列最短的黑白連續段就是一個模組。
+   要整數倍放大,模組邊界才對得齊點陣,掃描器才讀得到。 */
+function qrModules(c){
+  const x = c.getContext('2d'), d = x.getImageData(0,0,c.width,c.height).data;
+  const row = Math.floor(c.height/2);
+  let run = 0, min = 1e9, prev = null;
+  for(let i=0;i<c.width;i++){
+    const v = d[(row*c.width+i)*4] < 128 ? 1 : 0;
+    if(prev === null || v === prev) run++; else { if(run) min = Math.min(min, run); run = 1; }
+    prev = v;
+  }
+  return Math.round(c.width / min);
+}
 
 function printImage(){
   const t = tpl(), src = $('out'), rot = t.w > t.h;
   const sw = rot ? src.height : src.width, sh = rot ? src.width : src.height;
   const W = PRINT_W, H = Math.round(sh * W / sw);
+  const qr = qrCanvas(ROOM_QR, 520);
+  let dots = 0;
+  if(qr){
+    const mods = qrModules(qr);
+    for(let k = QR_DOTS_MAX; k >= QR_DOTS_MIN; k--){
+      if(mods * k <= QR_MAX_DOTS){ dots = mods * k; break; }
+    }
+  }
   const s = 16;                              // 說明文字的字級(點)
-  const foot = s * 3;
+  const foot = dots ? dots + s * 4 : s * 3;
 
   const c = document.createElement('canvas');
   c.width = W; c.height = H + foot;
@@ -689,15 +780,16 @@ function printImage(){
   else    { x.drawImage(src,0,0,W,H); }
   x.restore();
 
-  /* 紙上不再有 QR。
-     2026-09-20:先是把照片塞進 QR(掃得到但照片沒進房間,原因沒查出來),
-     再換成短連結(2.3 公分)。最後決定拿掉 —— 一條沒人會打的網址不值得佔位置。
-     要把人帶回房間,靠的是「掃記者證印出你的房間」那條,不是紙上的 QR。 */
+  const top = H + Math.round(s*0.6);
+  if(qr){
+    x.imageSmoothingEnabled = false;         // 整數倍 + 不內插 = 模組邊界對齊點陣
+    x.drawImage(qr, Math.round((W-dots)/2), top, dots, dots);
+  }
   x.fillStyle = '#000'; x.textAlign = 'center';
   x.font = s + 'px "Courier New", monospace';
-  x.fillText('FEEDO MUSEUM  PHOTO BOOTH', W/2, H + s*1.4);
+  x.fillText('掃我 → 打開你的 FEEDO 房間', W/2, top + dots + s*1.5);
   x.font = Math.round(s*0.8) + 'px "Courier New", monospace';
-  x.fillText('PET.FEEDOMUSEUM.COM', W/2, H + s*2.5);
+  x.fillText('PET.FEEDOMUSEUM.COM', W/2, top + dots + s*2.8);
   return c;
 }
 
@@ -719,6 +811,7 @@ async function realPrint(){
 }
 
 $('printBtn').onclick = async () => {
+  sfx('tap');
   const printing = realPrint();       // 跟出紙動畫同時跑,動畫約 3 秒、印一張也差不多
   const po = $('printOut');
   po.src = outUrl;
@@ -727,6 +820,7 @@ $('printBtn').onclick = async () => {
   $('deliverMoby').classList.remove('hidden');
   $('pickupBtn').disabled = true;
   show('screen-print');
+  sfx('develop');
   // 一定要等畫面顯示後才量尺寸:display:none 的元素 clientWidth 是 0,
   // 遮罩會變成零尺寸,成品就永遠看不見
   await wait(60);
@@ -735,12 +829,14 @@ $('printBtn').onclick = async () => {
   po.classList.add('out');
   await wait(2700);
   const printed = await printing;
+  sfx(printed ? 'done' : 'fail');
   // 真的印出來的時候,是 Moby 把今天這份送到你手上
   $('printStatus').textContent = printed ? "TODAY'S EDITION DELIVERED" : '請取件';
   $('pickupBtn').disabled = false;
 };
 
 $('pickupBtn').onclick = () => {
+  sfx('tap');
   $('outImg').src = outUrl;
   show('screen-result');
 };
@@ -902,7 +998,7 @@ if(KIOSK){
   ['dlBtn','toRoomBtn'].forEach(id => $(id).classList.add('hidden'));
   $('saveHint').textContent = '撕下你的拍貼帶走';
   $('deviceHint').classList.remove('hidden');
-  $('attractBtn').onclick = () => { show('screen-landing'); };
+  $('attractBtn').onclick = () => { sfx('tap'); show('screen-landing'); };
 
   let idle = null;
   const backToAttract = () => {
