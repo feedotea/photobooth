@@ -752,16 +752,32 @@ function printImage(){
   return c;
 }
 
+/* 印出一張就記一筆。兩週試辦要看三個數字,這是第一個:客人想不想要。
+   只記「哪一天、印了幾張」,沒有個資(pet.counters,023)。
+   送不出去就算了,不重試 —— 數字少一筆不值得拖慢出紙。 */
+const PET_FN = 'https://gezzdwwqxysesxoqhabe.supabase.co/functions/v1/pet-room';
+function bump(key){
+  try{
+    fetch(PET_FN, {method:'POST', headers:{'content-type':'application/json'},
+                   body: JSON.stringify({action:'stat', key})}).catch(()=>{});
+  }catch(e){}
+}
+
 async function realPrint(){
   if(!await printerReady) return false;
   const c = printImage();
+  let ok;
   if(window.FeedoNativePrint){
     const j = await FeedoNativePrint.print(c.toDataURL('image/png'), {dither:true});
-    return !!(j && j.ok);
+    ok = !!(j && j.ok);
+  }else{
+    const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+    ok = await fetch(PRINT_BRIDGE + '/print?dither=1', {method:'POST', body: blob})
+      .then(r => r.json()).then(j => j.ok).catch(() => false);
   }
-  const blob = await new Promise(res => c.toBlob(res, 'image/png'));
-  return fetch(PRINT_BRIDGE + '/print?dither=1', {method:'POST', body: blob})
-    .then(r => r.json()).then(j => j.ok).catch(() => false);
+  // 店裡那台與電腦上的列印橋分開算 —— 試辦要看的是店裡那台
+  if(ok) bump(KIOSK ? 'print.kiosk' : 'print.web');
+  return ok;
 }
 
 $('printBtn').onclick = async () => {
