@@ -281,8 +281,6 @@
   </section>
 </div>
 
-<!-- 拍貼條下緣那個 QR。跟 claim 站用的是同一支,版號寫死 -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 // ===== 追蹤網址 =====
 const TRACKER_URL = 'https://script.google.com/macros/s/AKfycbwmBQzkBw4s15BDI_6t3EBdyq6PYzwRGHWJdZAoIVy2ci3hCusI9fnyB2PFWPBNp5Sigg/exec';
@@ -671,64 +669,14 @@ printerReady = checkPrinter();
 /* 印出來的那張跟螢幕上的不一樣:底下多一條 QR。
    紙會被帶回家,掃了就回到 FEEDO 房間 —— 475 位顧客裡有 453 位只來過一次,
    這條 QR 是少數能把人帶回來的東西。?from=print 讓我們分得出他是從紙來的。 */
-const ROOM_QR = 'https://pet.feedomuseum.com/?from=print';
-
-function qrCanvas(text, px){
-  if(!window.QRCode) return null;
-  const box = document.createElement('div');
-  // 容錯 M:L 只在正對著掃才穩,斜一點就讀不回來(2026-09-20 實印比對)。
-  // 載重因此要壓小,見 QR_PHOTO。
-  new QRCode(box, {text, width:px, height:px, correctLevel:QRCode.CorrectLevel.M});
-  return box.querySelector('canvas');
-}
-
-/* QR 要用整數倍放大,模組邊界才對得齊點陣,掃描器才讀得到。
-   量模組數的方法:中間那一列最短的黑白連續段就是一個模組。 */
-function qrModules(c){
-  const x = c.getContext('2d'), d = x.getImageData(0,0,c.width,c.height).data;
-  const row = Math.floor(c.height/2);
-  let run = 0, min = 1e9, prev = null;
-  for(let i=0;i<c.width;i++){
-    const v = d[(row*c.width+i)*4] < 128 ? 1 : 0;
-    if(prev === null || v === prev) run++; else { if(run) min = Math.min(min, run); run = 1; }
-    prev = v;
-  }
-  return Math.round(c.width / min);
-}
-
-/* 橫式的證件照在這裡就轉正,印的時候不用再轉 —— 這樣 QR 那條
-   永遠在紙的下緣,不會跑到側邊。 */
 const PRINT_W = 576;                       // 出單機的可印寬度(點)
-const QR_DOTS_MAX = 6, QR_DOTS_MIN = 3;    // 一個模組印幾點。實印:6 點斜著也穩
-const QR_MAX_DOTS = 528;                   // 左右各留白邊(quiet zone)
-const QR_PHOTO = { w: 40, h: 54 };         // 塞進 QR 的照片尺寸(房間顯示照樣放大)
 
-/* 直接用紙的寬度(576 點)合成,不讓印表機那端再縮放。
- *
- * 2026-09-20 的教訓:原本在 1057 點寬的拍貼條上畫 QR,送印之前整張縮到 576
- * 再做網點化 —— 縮放加網點會把模組邊緣糊掉,掃描器時好時壞。
- * 在 576 的畫布上用整數倍畫 QR,一個模組就是整數個點,印出來邊界是齊的;
- * 照片那一段照樣縮小再網點化,那是照片本來就該有的處理。 */
-/* printURL 由呼叫端先準備好 —— 簽章要問 App,是非同步的,
-   而畫圖這段要能一口氣畫完。 */
-function printImage(printURL){
+function printImage(){
   const t = tpl(), src = $('out'), rot = t.w > t.h;
   const sw = rot ? src.height : src.width, sh = rot ? src.width : src.height;
   const W = PRINT_W, H = Math.round(sh * W / sw);
-
-  // 紙上的 QR 帶著照片本身,掃了就進他的房間。產不出來(函式庫沒載到)就退回純連結
-  const url = printURL || ROOM_QR;
-  const qr = qrCanvas(url, 520);
-  let dots = 0;
-  if(qr){
-    const mods = qrModules(qr);
-    for(let k = QR_DOTS_MAX; k >= QR_DOTS_MIN; k--){
-      if(mods * k <= QR_MAX_DOTS){ dots = mods * k; break; }
-    }
-    if(!dots) dots = mods * QR_DOTS_MIN;     // 真的塞不下就用最小倍率,至少印得出來
-  }
   const s = 16;                              // 說明文字的字級(點)
-  const foot = dots ? dots + s * 4 : s * 3;
+  const foot = s * 3;
 
   const c = document.createElement('canvas');
   c.width = W; c.height = H + foot;
@@ -741,33 +689,21 @@ function printImage(printURL){
   else    { x.drawImage(src,0,0,W,H); }
   x.restore();
 
-  const top = H + Math.round(s*0.6), cx = W/2;
-  if(qr){
-    x.imageSmoothingEnabled = false;         // 整數倍 + 不內插 = 模組邊界對齊點陣
-    x.drawImage(qr, Math.round((W-dots)/2), top, dots, dots);
-  }
+  /* 紙上不再有 QR。
+     2026-09-20:先是把照片塞進 QR(掃得到但照片沒進房間,原因沒查出來),
+     再換成短連結(2.3 公分)。最後決定拿掉 —— 一條沒人會打的網址不值得佔位置。
+     要把人帶回房間,靠的是「掃記者證印出你的房間」那條,不是紙上的 QR。 */
   x.fillStyle = '#000'; x.textAlign = 'center';
   x.font = s + 'px "Courier New", monospace';
-  x.fillText('掃我 → 這張照片會進你的 FEEDO 房間', cx, top + dots + s*1.5);
+  x.fillText('FEEDO MUSEUM  PHOTO BOOTH', W/2, H + s*1.4);
   x.font = Math.round(s*0.8) + 'px "Courier New", monospace';
-  x.fillText('PET.FEEDOMUSEUM.COM', cx, top + dots + s*2.8);
+  x.fillText('PET.FEEDOMUSEUM.COM', W/2, H + s*2.5);
   return c;
-}
-
-/* 印出一張就記一筆。兩週試辦要看三個數字,這是第一個:客人想不想要。
-   只記「哪一天、印了幾張」,沒有個資(pet.counters,023)。
-   送不出去就算了,不重試 —— 數字少一筆不值得拖慢出紙。 */
-const PET_FN = 'https://gezzdwwqxysesxoqhabe.supabase.co/functions/v1/pet-room';
-function bump(key){
-  try{
-    fetch(PET_FN, {method:'POST', headers:{'content-type':'application/json'},
-                   body: JSON.stringify({action:'stat', key})}).catch(()=>{});
-  }catch(e){}
 }
 
 async function realPrint(){
   if(!await printerReady) return false;
-  const c = printImage(await roomPhotoURL('print', QR_PHOTO.w, QR_PHOTO.h));
+  const c = printImage();
   let ok;
   if(window.FeedoNativePrint){
     const j = await FeedoNativePrint.print(c.toDataURL('image/png'), {dither:true});
