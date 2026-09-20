@@ -787,7 +787,10 @@ function printImage(){
 
   x.save();
   x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
-  if(rot){ x.translate(W,0); x.rotate(Math.PI/2); x.drawImage(src,0,0,sh,sw); }  // 證件照轉正
+  /* 證件照轉正。轉 90 度之後座標軸也跟著轉,所以這裡的「寬」是紙的長度 H、
+     「高」是紙的寬度 W —— 寫成原圖尺寸的話等於沒縮放,右邊會被紙切掉
+     (2026-09-20 實際印出來兩張證件照都缺一角)。 */
+  if(rot){ x.translate(W,0); x.rotate(Math.PI/2); x.drawImage(src,0,0,H,W); }
   else    { x.drawImage(src,0,0,W,H); }
   x.restore();
 
