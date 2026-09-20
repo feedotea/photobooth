@@ -24,6 +24,34 @@
   .btn:active{transform:scale(.97)}
   .btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--ink)}
   .btn[disabled]{opacity:.35;pointer-events:none}
+
+  /* ===== Moby ===== */
+  /* 房間那隻像素 Moby(exports/gif/4x)。拍貼機原本是手繪風,但報紙、房間、
+     出單機都是點陣的,Moby 用像素版三邊才是同一個世界。 */
+  .moby{image-rendering:pixelated;height:104px;width:auto;display:block}
+
+  /* ===== 店內模式:一台 iPad 立在櫃台,客人站著用 =====
+     手機是已經認識 FEEDO 的人,店裡是路過的陌生人。同一份程式,
+     店內版字大、按鈕大、不教存圖、沒人碰就自己回到待機。 */
+  #screen-attract{justify-content:center;gap:20px;text-align:center}
+  .attract-title{font-family:"Courier New",monospace;font-size:26px;letter-spacing:.34em;text-transform:uppercase}
+  .attract-sub{font-family:"Courier New",monospace;font-size:13px;letter-spacing:.2em;color:var(--grey);line-height:2.2}
+  #screen-attract .moby{height:150px}
+  body.kiosk .app{max-width:760px}
+  body.kiosk .btn{font-size:19px;padding:22px 40px;max-width:440px}
+  body.kiosk .sect-label,body.kiosk .cap-status,body.kiosk .print-title{font-size:15px}
+  body.kiosk .seg button,body.kiosk .pick-btn{font-size:15px;padding:16px 8px}
+  body.kiosk .seg,body.kiosk .carousel,body.kiosk .pick-row,body.kiosk .vf-wrap,
+  body.kiosk .actions,body.kiosk .reward{max-width:520px}
+  body.kiosk .tpl-stage{height:420px}
+  body.kiosk #checkImg{max-width:320px}
+  body.kiosk #outImg{max-width:340px}
+  body.kiosk .tag-line{font-size:16px}
+
+  /* 拍照前:Moby 先出場說一聲,不是冷冰冰地直接倒數 */
+  .press-ready{position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:10px;background:rgba(244,241,234,.94);}
+  .press-ready .label{font-family:"Courier New",monospace;font-size:17px;letter-spacing:.3em}
   .btn+.btn{margin-top:14px}
   .err{margin-top:16px;font-family:"Courier New",monospace;font-size:11px;line-height:1.8;color:#a33;max-width:320px;}
   .hidden{display:none!important}
@@ -131,6 +159,14 @@
     <span>PHOTO BOOTH</span>
   </div>
 
+  <!-- ===== 0. 待機(只有店內模式會看到) ===== -->
+  <section class="screen" id="screen-attract">
+    <img class="moby" src="images/moby/walk.gif" alt="">
+    <div class="attract-title">Photo Booth</div>
+    <p class="attract-sub">免費拍貼 · 拍完馬上印給你<br>Free · printed on the spot</p>
+    <button class="btn" id="attractBtn">按我開始</button>
+  </section>
+
   <!-- ===== 1. 首頁 ===== -->
   <section class="screen active" id="screen-landing">
     <img id="boothImg" src="images/booth.webp" alt="FEEDO 拍貼機">
@@ -181,6 +217,10 @@
       <div class="flip" id="flipBtn">切換鏡頭</div>
       <div class="countdown" id="countdown"></div>
       <div class="flash" id="flash"></div>
+      <div class="press-ready hidden" id="pressReady">
+        <img class="moby" src="images/moby/greet.gif" alt="">
+        <div class="label">PRESS READY</div>
+      </div>
     </div>
     <p class="cap-status" id="capStatus">準備好,看鏡頭</p>
     <div class="dots" id="dots"></div>
@@ -199,6 +239,8 @@
   <!-- ===== 5. 列印 ===== -->
   <section class="screen" id="screen-print">
     <p class="print-title" id="printStatus">列印中<span class="dev-dots"></span></p>
+    <!-- 出紙不是機器在動,是 Moby 把今天這份送出來 -->
+    <img class="moby hidden" id="deliverMoby" src="images/moby/tray.gif" alt="">
     <div class="dispenser">
       <img class="chute" id="chuteImg" src="images/chute.webp" alt="出紙口">
       <div class="chute-window" id="chuteWindow"><img class="print-out" id="printOut" alt=""></div>
@@ -224,6 +266,8 @@
   </section>
 </div>
 
+<!-- 拍貼條下緣那個 QR。跟 claim 站用的是同一支,版號寫死 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 // ===== 追蹤網址 =====
 const TRACKER_URL = 'https://script.google.com/macros/s/AKfycbwmBQzkBw4s15BDI_6t3EBdyq6PYzwRGHWJdZAoIVy2ci3hCusI9fnyB2PFWPBNp5Sigg/exec';
@@ -466,6 +510,11 @@ function capturePhoto(){
 
 async function runSequence(){
   const n = shotsNeeded();
+  // Moby 先出場。直接倒數的話,客人還在找鏡頭在哪就已經拍完第一張
+  $('pressReady').classList.remove('hidden');
+  $('capStatus').textContent = 'MOBY 就位';
+  await wait(1500);
+  $('pressReady').classList.add('hidden');
   for(let i=0;i<n;i++){
     $('capStatus').textContent = '第 '+(i+1)+' 格 / 共 '+n+' 格';
     for(let c=COUNT_FROM;c>0;c--){ $('countdown').textContent = c; await wait(1000); }
@@ -604,16 +653,56 @@ function checkPrinter(){
     .then(r => r.json()).then(j => !!(j.ok && j.printer)).catch(() => false);
 }
 printerReady = checkPrinter();
+/* 印出來的那張跟螢幕上的不一樣:底下多一條 QR。
+   紙會被帶回家,掃了就回到 FEEDO 房間 —— 475 位顧客裡有 453 位只來過一次,
+   這條 QR 是少數能把人帶回來的東西。?from=print 讓我們分得出他是從紙來的。 */
+const ROOM_QR = 'https://pet.feedomuseum.com/?from=print';
+
+function qrCanvas(text, px){
+  if(!window.QRCode) return null;
+  const box = document.createElement('div');
+  new QRCode(box, {text, width:px, height:px, correctLevel:QRCode.CorrectLevel.M});
+  return box.querySelector('canvas');
+}
+
+/* 橫式的證件照在這裡就轉正,印的時候不用再轉 —— 這樣 QR 那條
+   永遠在紙的下緣,不會跑到側邊。 */
+function printImage(){
+  const t = tpl(), src = $('out'), rot = t.w > t.h;
+  const W = rot ? src.height : src.width, H = rot ? src.width : src.height;
+  const foot = Math.round(W * 0.30);
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H + foot;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0,0,c.width,c.height);
+  x.save();
+  if(rot){ x.translate(W,0); x.rotate(Math.PI/2); }
+  x.drawImage(src,0,0);
+  x.restore();
+
+  const q = Math.round(foot * 0.58), qr = qrCanvas(ROOM_QR, 240);
+  const cx = W/2, top = H + Math.round(foot*0.10);
+  if(qr){ x.imageSmoothingEnabled = false; x.drawImage(qr, Math.round(cx-q/2), top, q, q); }
+  x.fillStyle = '#000'; x.textAlign = 'center';
+  const s = Math.max(13, Math.round(W*0.028));
+  x.font = s + 'px "Courier New", monospace';
+  // 只承諾做得到的:掃了會打開他的房間。照片跟著紙一起進房間要等
+  // 領取碼那一段做完(現在共用 iPad 不可能叫客人登入 LINE)
+  x.fillText('掃我 → 打開你的 FEEDO 房間', cx, top + q + s*1.6);
+  x.font = Math.round(s*0.85) + 'px "Courier New", monospace';
+  x.fillText('PET.FEEDOMUSEUM.COM', cx, top + q + s*3);
+  return c;
+}
+
 async function realPrint(){
   if(!await printerReady) return false;
-  const t = tpl(), rotate = t.w > t.h;
+  const c = printImage();
   if(window.FeedoNativePrint){
-    const j = await FeedoNativePrint.print(outUrl, {dither: true, rotate});
+    const j = await FeedoNativePrint.print(c.toDataURL('image/png'), {dither:true});
     return !!(j && j.ok);
   }
-  const blob = await outBlob;
-  const q = '?dither=1' + (rotate ? '&rotate=1' : '');
-  return fetch(PRINT_BRIDGE + '/print' + q, {method:'POST', body: blob})
+  const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+  return fetch(PRINT_BRIDGE + '/print?dither=1', {method:'POST', body: blob})
     .then(r => r.json()).then(j => j.ok).catch(() => false);
 }
 
@@ -623,6 +712,7 @@ $('printBtn').onclick = async () => {
   po.src = outUrl;
   po.classList.remove('out');
   $('printStatus').innerHTML = '列印中<span class="dev-dots"></span>';
+  $('deliverMoby').classList.remove('hidden');
   $('pickupBtn').disabled = true;
   show('screen-print');
   // 一定要等畫面顯示後才量尺寸:display:none 的元素 clientWidth 是 0,
@@ -632,8 +722,9 @@ $('printBtn').onclick = async () => {
   await wait(80);
   po.classList.add('out');
   await wait(2700);
-  await printing;
-  $('printStatus').textContent = '請取件';
+  const printed = await printing;
+  // 真的印出來的時候,是 Moby 把今天這份送到你手上
+  $('printStatus').textContent = printed ? "TODAY'S EDITION DELIVERED" : '請取件';
   $('pickupBtn').disabled = false;
 };
 
@@ -761,6 +852,42 @@ function saveToRoom(){
 const ROOM_LIVE=true;
 $('toRoomBtn').onclick=saveToRoom;
 if(!ROOM_LIVE && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) $('toRoomBtn').style.display='none';
+
+/* ===== 店內模式 =====
+   App 會注入 window.FeedoKiosk(也吃 ?kiosk=1,方便在電腦上測)。
+   店裡是站著的陌生人:待機畫面、字大、不教存圖、沒人碰就回到待機。
+   放在網頁而不是 App 裡,是為了改文案、改流程都不用把 iPad 接回電腦重裝。 */
+const KIOSK = !!window.FeedoKiosk || /[?&]kiosk=1/.test(location.search);
+const IDLE_MS = 60000;
+
+if(KIOSK){
+  document.body.classList.add('kiosk');
+  show('screen-attract');
+  // 共用機器不教存圖,也不要客人在這裡登入 LINE。紙上的 QR 就是回家的路。
+  ['dlBtn','toRoomBtn'].forEach(id => $(id).classList.add('hidden'));
+  $('saveHint').textContent = '撕下你的拍貼帶走 · 掃紙上的 QR 打開你的房間';
+  $('attractBtn').onclick = () => { show('screen-landing'); };
+
+  let idle = null;
+  const backToAttract = () => {
+    stopCamera();
+    captures = [];
+    $('printOut').classList.remove('out');
+    $('pressReady').classList.add('hidden');
+    $('deliverMoby').classList.add('hidden');
+    show('screen-attract');
+  };
+  const bump = () => {
+    clearTimeout(idle);
+    // 拍攝中不打斷:倒數與沖洗期間本來就沒人碰螢幕
+    if($('screen-attract').classList.contains('active')) return;
+    if($('screen-capture').classList.contains('active')) return;
+    idle = setTimeout(backToAttract, IDLE_MS);
+  };
+  ['pointerdown','keydown'].forEach(e => document.addEventListener(e, bump, true));
+  new MutationObserver(bump).observe(document.querySelector('.app'),
+    {subtree:true, attributes:true, attributeFilter:['class']});
+}
 
 // 自動防快取:從 back-forward cache 還原時強制重新抓最新頁面
 window.addEventListener('pageshow', e => { if(e.persisted) location.reload(); });
