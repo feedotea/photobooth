@@ -36,10 +36,21 @@
      店內版字大、按鈕大、不教存圖、沒人碰就自己回到待機。 */
   #screen-attract{justify-content:center;gap:14px;text-align:center}
   .attract-sub{font-family:"Courier New",monospace;font-size:13px;letter-spacing:.2em;color:var(--grey);line-height:2.2}
-  #attractBooth{width:100%;max-width:360px;height:auto}
-  /* Moby 在拍貼機旁邊走來走去,讓待機畫面看起來是活的 */
-  #attractMoby{height:92px;margin-top:-18px;animation:stroll 9s ease-in-out infinite}
-  @keyframes stroll{0%{transform:translateX(-90px)}50%{transform:translateX(90px) scaleX(-1)}100%{transform:translateX(-90px)}}
+  /* 待機:Moby 從左邊走進拍貼機的門簾裡,消失一下又從左邊出現。
+     狗疊在插畫上面,所以外面包一層 position:relative 的框。 */
+  .booth-stage{position:relative;width:100%;max-width:360px}
+  #attractBooth{width:100%;height:auto;display:block}
+  #attractMoby{position:absolute;left:0;bottom:9%;height:58px;
+    animation:walkin 11s linear infinite}
+  /* 終點對著插畫裡那道藍色門簾（約整張的 62%）。狗在那裡縮小淡出＝走進去了。 */
+  @keyframes walkin{
+    0%   {transform:translateX(-70px);opacity:0}
+    6%   {transform:translateX(-40px);opacity:1}
+    48%  {transform:translateX(52%);opacity:1}
+    56%  {transform:translateX(58%) scale(.88);opacity:.8}
+    62%  {transform:translateX(62%) scale(.66);opacity:0}
+    100% {transform:translateX(-70px);opacity:0}
+  }
 
   /* 取件頁角落的預告:紙帶回家掃了,牠就在裡面 */
   .device-hint{display:flex;align-items:center;gap:12px;margin-top:16px;max-width:330px;
@@ -172,8 +183,10 @@
        用拍貼機的插畫當門口:店裡是路過的陌生人,一眼要知道這台是幹嘛的。
        電子雞留到取件那一頁預告,回家掃 QR 才真的見到。 -->
   <section class="screen" id="screen-attract">
-    <img id="attractBooth" src="images/booth.webp" alt="FEEDO 拍貼機">
-    <img class="moby" id="attractMoby" src="images/moby/walk.gif" alt="">
+    <div class="booth-stage">
+      <img id="attractBooth" src="images/booth.webp" alt="FEEDO 拍貼機">
+      <img class="moby" id="attractMoby" src="images/moby/walk.gif" alt="">
+    </div>
     <p class="attract-sub">免費拍貼 · 拍完馬上印給你<br>Free · printed on the spot</p>
     <button class="btn" id="attractBtn">按我開始</button>
   </section>
