@@ -329,7 +329,18 @@ function sfx(kind){
     case 'shutter':                                                    // 喀嚓
       noise(.05, .05, 3000); tone(1200, .03, .03, 'square', .01);
       tone(300, .05, .03, 'square', .05); break;
-    case 'develop': tone(220, .5, .02, 'triangle', 0, 420); break;    // 沖洗中
+    /* 沖洗中:出紙的那幾秒要一直有聲音,不然客人會以為機器沒反應。
+       馬達是每 0.12 秒一下的低頻脈衝,走紙是輕輕的沙沙聲,
+       兩個都一次排好(Web Audio 自己照時間播),不用計時器。 */
+    case 'develop': {
+      const DUR = 2.7;
+      for(let t = 0; t < DUR; t += .12){
+        tone(120 + (t % .36 < .12 ? 14 : 0), .07, .014, 'square', t);   // 馬達
+        noise(.05, .010, 2600, t + .05);                                 // 走紙
+      }
+      tone(90, .18, .016, 'square', DUR, 60);                            // 停下來那一頓
+      break;
+    }
     case 'done':   [0,.09,.18].forEach((d,i)=>tone(520+i*180, .09, .035, 'square', d)); break;
     case 'fail':   tone(200, .18, .03, 'square', 0, 120); break;
   }
