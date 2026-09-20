@@ -40,17 +40,10 @@
      狗疊在插畫上面,所以外面包一層 position:relative 的框。 */
   .booth-stage{position:relative;width:100%;max-width:360px}
   #attractBooth{width:100%;height:auto;display:block}
-  #attractMoby{position:absolute;left:0;bottom:9%;height:58px;
-    animation:walkin 11s linear infinite}
-  /* 終點對著插畫裡那道藍色門簾（約整張的 62%）。狗在那裡縮小淡出＝走進去了。 */
-  @keyframes walkin{
-    0%   {transform:translateX(-70px);opacity:0}
-    6%   {transform:translateX(-40px);opacity:1}
-    48%  {transform:translateX(52%);opacity:1}
-    56%  {transform:translateX(58%) scale(.88);opacity:.8}
-    62%  {transform:translateX(62%) scale(.66);opacity:0}
-    100% {transform:translateX(-70px);opacity:0}
-  }
+  /* Moby 走進門簾、跳上椅子、坐著等人。分段靠 JS 換圖與座標,
+     不用一整串 keyframes —— 每一段的長度要跟 GIF 的動作對得上。 */
+  #attractMoby{position:absolute;left:0;bottom:9%;height:58px;opacity:0;
+    transition:transform .9s linear, opacity .5s linear, height .5s linear}
 
   /* 取件頁角落的預告:紙帶回家掃了,牠就在裡面 */
   .device-hint{display:flex;align-items:center;gap:12px;margin-top:16px;max-width:330px;
@@ -1026,6 +1019,48 @@ if(KIOSK){
   $('saveHint').textContent = '撕下你的拍貼帶走';
   $('deviceHint').classList.remove('hidden');
   $('attractBtn').onclick = () => { sfx('tap'); show('screen-landing'); };
+
+  /* 待機的動畫:走進去 -> 跳上椅子 -> 坐著 -> 淡出重來。
+     椅子的位置是照插畫量的(整張的 71% 寬、76% 高)。 */
+  const MOBY = $('attractMoby');
+  const STOOL = { x: 0.70, bottom: 0.31 };     // 椅面的位置(佔插畫的比例,照圖量的)
+  let mobyTimer = null;
+  function mobyStep(i){
+    const stage = MOBY.parentElement.getBoundingClientRect();
+    const set = (gif, x, bottom, h, op) => {
+      if (gif && !MOBY.src.endsWith(gif)) MOBY.src = 'images/moby/' + gif;
+      MOBY.style.transform = 'translateX(' + Math.round(x) + 'px)';
+      MOBY.style.bottom = (bottom * 100) + '%';
+      if (h) MOBY.style.height = h + 'px';
+      MOBY.style.opacity = op;
+    };
+    const W = stage.width;
+    switch(i){
+      case 0: MOBY.style.transition = 'none';
+              set('walk.gif', -70, 0.09, 58, 0);  break;          // 回到左邊
+      case 1: MOBY.style.transition = 'transform .9s linear, opacity .5s linear, height .5s linear';
+              set('walk.gif', -40, 0.09, 58, 1);  break;          // 出現
+      case 2: MOBY.style.transition = 'transform 3.4s linear, opacity .5s linear';
+              set('walk.gif', W * 0.5, 0.09, 58, 1); break;       // 走到門口
+      case 3: MOBY.style.transition = 'transform .5s ease-out, bottom .5s ease-out, height .4s linear';
+              set('jump.gif', W * STOOL.x, STOOL.bottom, 48, 1); break;   // 跳上椅子
+      case 4: set('sit.gif', W * STOOL.x, STOOL.bottom, 48, 1); break;    // 坐著等
+      case 5: MOBY.style.transition = 'opacity .8s linear';
+              set(null, W * STOOL.x, STOOL.bottom, 48, 0); break;          // 淡出
+    }
+  }
+  function mobyLoop(){
+    const plan = [[0,80],[1,600],[2,3600],[3,700],[4,4200],[5,900]];
+    let i = 0;
+    const next = () => {
+      const [step, wait] = plan[i % plan.length];
+      mobyStep(step);
+      i++;
+      mobyTimer = setTimeout(next, wait);
+    };
+    next();
+  }
+  mobyLoop();
 
   let idle = null;
   const backToAttract = () => {
