@@ -661,36 +661,59 @@ const ROOM_QR = 'https://pet.feedomuseum.com/?from=print';
 function qrCanvas(text, px){
   if(!window.QRCode) return null;
   const box = document.createElement('div');
-  new QRCode(box, {text, width:px, height:px, correctLevel:QRCode.CorrectLevel.M});
+  // 照片那條網址大約 850 字,用 L 容錯才壓得進 117 個模組。
+  // 紙只有 576 點寬,模組再多就塞不下了。
+  new QRCode(box, {text, width:px, height:px, correctLevel:QRCode.CorrectLevel.L});
   return box.querySelector('canvas');
+}
+
+/* QR 要用整數倍放大,模組邊界才對得齊點陣,掃描器才讀得到。
+   量模組數的方法:中間那一列最短的黑白連續段就是一個模組。 */
+function qrModules(c){
+  const x = c.getContext('2d'), d = x.getImageData(0,0,c.width,c.height).data;
+  const row = Math.floor(c.height/2);
+  let run = 0, min = 1e9, prev = null;
+  for(let i=0;i<c.width;i++){
+    const v = d[(row*c.width+i)*4] < 128 ? 1 : 0;
+    if(prev === null || v === prev) run++; else { if(run) min = Math.min(min, run); run = 1; }
+    prev = v;
+  }
+  return Math.round(c.width / min);
 }
 
 /* 橫式的證件照在這裡就轉正,印的時候不用再轉 —— 這樣 QR 那條
    永遠在紙的下緣,不會跑到側邊。 */
+const PRINT_W = 576;      // 出單機的可印寬度(點)
+const QR_DOTS = 3;        // 一個模組印幾點。2026-09-20 實測:60x80 的載重 x3(44mm)掃得到
+
 function printImage(){
   const t = tpl(), src = $('out'), rot = t.w > t.h;
   const W = rot ? src.height : src.width, H = rot ? src.width : src.height;
-  const foot = Math.round(W * 0.30);
+  const toPrint = PRINT_W / W;                      // 這張圖縮到紙寬的比例
+
+  // 紙上的 QR 帶著照片本身,掃了就進他的房間。產不出來(函式庫沒載到)就退回純連結
+  const url = roomPhotoURL('print') || ROOM_QR;
+  const qr = qrCanvas(url, 480);
+  const qpx = qr ? Math.round(qrModules(qr) * QR_DOTS / toPrint) : 0;
+  const s = Math.max(13, Math.round(W * 0.028));
+  const foot = qpx ? qpx + Math.round(s * 4.4) : Math.round(s * 3);
+
   const c = document.createElement('canvas');
   c.width = W; c.height = H + foot;
   const x = c.getContext('2d');
   x.fillStyle = '#fff'; x.fillRect(0,0,c.width,c.height);
   x.save();
-  if(rot){ x.translate(W,0); x.rotate(Math.PI/2); }
+  if(rot){ x.translate(W,0); x.rotate(Math.PI/2); }   // 橫式證件照在這裡就轉正
   x.drawImage(src,0,0);
   x.restore();
 
-  const q = Math.round(foot * 0.58), qr = qrCanvas(ROOM_QR, 240);
-  const cx = W/2, top = H + Math.round(foot*0.10);
-  if(qr){ x.imageSmoothingEnabled = false; x.drawImage(qr, Math.round(cx-q/2), top, q, q); }
+  const cx = W/2, top = H + Math.round(s*0.8);
+  if(qr){ x.imageSmoothingEnabled = false; x.drawImage(qr, Math.round(cx-qpx/2), top, qpx, qpx); }
   x.fillStyle = '#000'; x.textAlign = 'center';
-  const s = Math.max(13, Math.round(W*0.028));
   x.font = s + 'px "Courier New", monospace';
-  // 只承諾做得到的:掃了會打開他的房間。照片跟著紙一起進房間要等
-  // 領取碼那一段做完(現在共用 iPad 不可能叫客人登入 LINE)
-  x.fillText('掃我 → 打開你的 FEEDO 房間', cx, top + q + s*1.6);
+  x.fillText('掃我 → 這張照片會進你的 FEEDO 房間', cx, top + qpx + s*1.6);
   x.font = Math.round(s*0.85) + 'px "Courier New", monospace';
-  x.fillText('PET.FEEDOMUSEUM.COM', cx, top + q + s*3);
+  x.fillText('PET.FEEDOMUSEUM.COM', cx, top + qpx + s*3);
   return c;
 }
 
@@ -824,9 +847,12 @@ function roomB64(bytes){
   return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
 
-function saveToRoom(){
+/* 房間的網址:照片本身就放在網址裡。
+   這條網址有兩個出口 —— 按「存進我的房間」直接跳過去,或印成紙上的 QR。
+   伺服器從頭到尾沒有存過這張照片(見 docs/claim/010 的設計理由)。 */
+function roomPhotoURL(from){
   const c=captures[0];
-  if(!c){return;}
+  if(!c){return null;}
   // 相機是 4:3 或 16:9,房間要 3:4。置中裁切而不是壓扁 ——
   // 裁切只是少看到兩側,壓扁會讓人變形。(與 drawCover 同一套算法)
   const tar=ROOM_W/ROOM_H, ar=c.width/c.height;
@@ -842,8 +868,15 @@ function saveToRoom(){
   // 房間用這個值算「用某個圖框拍過」的解鎖條件(roomModel.js 的 GEAR_RULES),
   // 也會印在照片下方。改模板 id 的話那邊要一起改。
   u.searchParams.set('frame',tpl().frame || tpl().id);
+  if(from) u.searchParams.set('from',from);
+  return u.toString();
+}
+
+function saveToRoom(){
+  const url=roomPhotoURL();
+  if(!url){return;}
   stopCamera();
-  location.href=u.toString();
+  location.href=url;
 }
 // 跟房間的 LINKS.boothReady 是一組,兩邊一起開。
 // 2026-09-13 改版時關掉過:當時的模板 id 對不上房間 GEAR_RULES(id/moby)。
