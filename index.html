@@ -1023,7 +1023,10 @@ if(KIOSK){
   /* 待機的動畫:走進去 -> 跳上椅子 -> 坐著 -> 淡出重來。
      椅子的位置是照插畫量的(整張的 71% 寬、76% 高)。 */
   const MOBY = $('attractMoby');
-  const STOOL = { x: 0.70, bottom: 0.31 };     // 椅面的位置(佔插畫的比例,照圖量的)
+  /* 椅面的位置。不是用眼睛抓的:掃插畫裡那片淡藍灰(椅面)的像素範圍,
+     中心在 77.8% 寬、上緣在 74.4% 高。狗的腳要落在椅面上緣,
+     所以 bottom = 1 - 0.744。之前寫 0.31,腳浮在椅子上方五公分。 */
+  const STOOL = { x: 0.70, bottom: 0.256 };
   let mobyTimer = null;
   function mobyStep(i){
     const stage = MOBY.parentElement.getBoundingClientRect();
