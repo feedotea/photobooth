@@ -709,13 +709,15 @@ const QR_PHOTO = { w: 40, h: 54 };         // 塞進 QR 的照片尺寸(房間�
  * 再做網點化 —— 縮放加網點會把模組邊緣糊掉,掃描器時好時壞。
  * 在 576 的畫布上用整數倍畫 QR,一個模組就是整數個點,印出來邊界是齊的;
  * 照片那一段照樣縮小再網點化,那是照片本來就該有的處理。 */
-function printImage(){
+/* printURL 由呼叫端先準備好 —— 簽章要問 App,是非同步的,
+   而畫圖這段要能一口氣畫完。 */
+function printImage(printURL){
   const t = tpl(), src = $('out'), rot = t.w > t.h;
   const sw = rot ? src.height : src.width, sh = rot ? src.width : src.height;
   const W = PRINT_W, H = Math.round(sh * W / sw);
 
   // 紙上的 QR 帶著照片本身,掃了就進他的房間。產不出來(函式庫沒載到)就退回純連結
-  const url = roomPhotoURL('print', QR_PHOTO.w, QR_PHOTO.h) || ROOM_QR;
+  const url = printURL || ROOM_QR;
   const qr = qrCanvas(url, 520);
   let dots = 0;
   if(qr){
@@ -765,7 +767,7 @@ function bump(key){
 
 async function realPrint(){
   if(!await printerReady) return false;
-  const c = printImage();
+  const c = printImage(await roomPhotoURL('print', QR_PHOTO.w, QR_PHOTO.h));
   let ok;
   if(window.FeedoNativePrint){
     const j = await FeedoNativePrint.print(c.toDataURL('image/png'), {dither:true});
@@ -904,7 +906,7 @@ function roomB64(bytes){
 /* w/h 預設是房間的 60x80。紙上的 QR 改用 40x54 —— 照片越大,QR 的格子越多、
    每格越小,斜著掃就讀不到。2026-09-20 實印比對:40x54 + 容錯 M + 一個模組 6 點
    是唯一斜著也穩的組合。手機上的「存進我的房間」不受影響,仍然是 60x80。 */
-function roomPhotoURL(from, w, h){
+async function roomPhotoURL(from, w, h){
   const c=captures[0];
   if(!c){return null;}
   const RW = w || ROOM_W, RH = h || ROOM_H;
@@ -922,13 +924,22 @@ function roomPhotoURL(from, w, h){
   u.searchParams.set('h',RH);
   // 房間用這個值算「用某個圖框拍過」的解鎖條件(roomModel.js 的 GEAR_RULES),
   // 也會印在照片下方。改模板 id 的話那邊要一起改。
-  u.searchParams.set('frame',tpl().frame || tpl().id);
+  const frame = tpl().frame || tpl().id;
+  u.searchParams.set('frame',frame);
   if(from) u.searchParams.set('from',from);
+
+  /* 到店拍貼的憑據:只有店裡那台 iPad 的 App 有密鑰,簽得出這個章。
+     後端驗過才把照片標成 kiosk —— 「到店才解得開」的配件規則只認這個標記。
+     手機上沒有 App,簽不出來也不需要,那條路本來就只算 web。 */
+  if(window.FeedoKioskSign){
+    const sig = await FeedoKioskSign([u.searchParams.get('photo'), RW, RH, frame].join('|'));
+    if(sig) u.searchParams.set('s', sig);
+  }
   return u.toString();
 }
 
-function saveToRoom(){
-  const url=roomPhotoURL();
+async function saveToRoom(){
+  const url=await roomPhotoURL();
   if(!url){return;}
   stopCamera();
   location.href=url;
