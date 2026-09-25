@@ -813,6 +813,17 @@ function printImage(){
   return c;
 }
 
+/* 印出一張就記一筆(pet.counters,023)。2026-09-20 拿掉 QR 那次把這段
+   一起刪掉了,結果每次印完都丟 ReferenceError:紙印得出來,但畫面停在
+   「列印中」、計數也沒加到。 */
+const PET_FN = 'https://gezzdwwqxysesxoqhabe.supabase.co/functions/v1/pet-room';
+function bump(key){
+  try{
+    fetch(PET_FN, {method:'POST', headers:{'content-type':'application/json'},
+                   body: JSON.stringify({action:'stat', key})}).catch(()=>{});
+  }catch(e){}
+}
+
 async function realPrint(){
   if(!await printerReady) return false;
   const c = printImage();
